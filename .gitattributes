@@ -1,0 +1,10 @@
+# Normaliza finais de linha no repositorio.
+# Por padrao, deixa o Git decidir texto vs binario.
+* text=auto
+
+# Scripts de shell SEMPRE com LF, pra rodarem no Raspberry Pi / Linux
+# mesmo tendo sido editados no Windows.
+*.sh text eol=lf
+
+# Documentacao e configs de texto com LF
+*.md text eol=lf
