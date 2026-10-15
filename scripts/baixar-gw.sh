@@ -1,10 +1,12 @@
 #!/bin/bash
-# Baixa os jogos Game & Watch (.mgw) do core lr-gw para a pasta de ROMs do RetroPie.
+# Baixa os jogos do core lr-gw para a pasta de ROMs do RetroPie.
+# A libretro hospeda esse conteudo na pasta "Handheld Electronic Game".
 # Usa /tmp para o zip temporario, entao nunca apaga nada da pasta de destino.
 # Uso: ./baixar-gw.sh
 set -euo pipefail
 
-BASE="http://bot.libretro.com/assets/cores/Game%20and%20Watch/"
+HOST="https://buildbot.libretro.com"
+BASE="$HOST/assets/cores/Handheld%20Electronic%20Game/"
 DEST="$HOME/RetroPie/roms/gameandwatch"
 mkdir -p "$DEST"
 
@@ -17,13 +19,13 @@ for u in "${urls[@]}"; do
   i=$((i+1))
   case "$u" in
     http*) full="$u" ;;
-    /*)    full="http://bot.libretro.com$u" ;;
+    /*)    full="$HOST$u" ;;
     *)     full="$BASE$u" ;;
   esac
   full="${full// /%20}"
   echo "[$i/${#urls[@]}] $(basename "$u")"
-  curl -s -L -o /tmp/gw.zip "$full" && unzip -qo /tmp/gw.zip "*.mgw" -d "$DEST"
+  curl -s -L -o /tmp/gw.zip "$full" && unzip -qo /tmp/gw.zip -d "$DEST"
   rm -f /tmp/gw.zip
 done
 
-echo "Pronto: $(ls "$DEST"/*.mgw 2>/dev/null | wc -l) jogos em $DEST"
+echo "Pronto: $(ls "$DEST" 2>/dev/null | wc -l) arquivos em $DEST"

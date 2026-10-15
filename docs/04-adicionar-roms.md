@@ -91,7 +91,9 @@ touch /tmp/es-restart && killall emulationstation
 ls ~/RetroPie/roms/gameandwatch
 ```
 
-> Se aparecer "Encontrados 0 jogos", verificar o HTML da página:
+> A libretro hospeda esses jogos na pasta **"Handheld Electronic Game"**.
+> Se aparecer "Encontrados 0 jogos" ou "Nenhum link encontrado", a página pode ter
+> mudado de endereço de novo — confira o HTML:
 > ```bash
-> curl -s "http://bot.libretro.com/assets/cores/Game%20and%20Watch/" | head -50
+> curl -s "https://buildbot.libretro.com/assets/cores/Handheld%20Electronic%20Game/" | head -50
 > ```
