@@ -51,3 +51,5 @@ Não precisa ler agora — consulte quando o problema aparecer.
 | [scripts/baixar-gw.sh](scripts/baixar-gw.sh) | Baixa todos os jogos Game & Watch do core `lr-gw` |
 
 Como usar os scripts: [docs/04-adicionar-roms.md](docs/04-adicionar-roms.md).
+https://gogunlocked.com/ultimate-marvel-vs-capcom-3-free-download/
+
