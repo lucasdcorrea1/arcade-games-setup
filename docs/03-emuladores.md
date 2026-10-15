@@ -27,4 +27,4 @@ sudo ~/RetroPie-Setup/retropie_setup.sh
 ```
 *Manage packages* → *Main* / *Optional* / *Experimental*.
 
-Pra colocar jogos depois de instalar o core, veja [adicionar-roms.md](adicionar-roms.md).
+Pra colocar jogos depois de instalar o core, veja [04-adicionar-roms.md](04-adicionar-roms.md).

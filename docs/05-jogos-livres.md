@@ -18,4 +18,4 @@ Conteúdo livre hospedado pela libretro:
 https://bot.libretro.com/assets/cores/
 ```
 
-Pra baixar os Game & Watch em lote, veja o script em [adicionar-roms.md](adicionar-roms.md).
+Pra baixar os Game & Watch em lote, veja o script em [04-adicionar-roms.md](04-adicionar-roms.md).

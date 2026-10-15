@@ -1,6 +1,6 @@
 # Acesso via rede (sistema)
 
-SSH, SCP e Samba. Pra transferir ROMs especificamente, veja [adicionar-roms.md](adicionar-roms.md).
+SSH, SCP e Samba. Pra transferir ROMs especificamente, veja [04-adicionar-roms.md](04-adicionar-roms.md).
 
 **Ver o IP do Pi**
 ```bash
