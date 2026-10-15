@@ -14,6 +14,7 @@ Tudo testável copiando e colando via SSH.
 3. [Instalar emuladores (cores)](#3-instalar-emuladores-cores)
 4. [Jogos livres e homebrew](#4-jogos-livres-e-homebrew)
 5. [Script: Game & Watch](#5-script-game--watch)
+5.1. [Script: importar ROMs de uma URL](#51-script-importar-roms-de-uma-url)
 6. [Transferir ROMs próprias](#6-transferir-roms-próprias)
 7. [Cheats (FBNeo)](#7-cheats-fbneo)
 8. [Controles e painel arcade](#8-controles-e-painel-arcade)
@@ -173,6 +174,42 @@ ls ~/RetroPie/roms/gameandwatch
 > ```bash
 > curl -s "http://bot.libretro.com/assets/cores/Game%20and%20Watch/" | head -50
 > ```
+
+---
+
+## 5.1. Script: importar ROMs de uma URL
+
+Script genérico: você muda a URL do ZIP e ele importa o conteúdo pra pasta de ROMs.
+Nunca apaga nada do destino (baixa pra `/tmp`). Está em [`scripts/importar-roms.sh`](scripts/importar-roms.sh).
+
+**Modo simples** — editar as 3 variáveis no topo do script (`ZIP_URL`, `SISTEMA`, `MODO`) e rodar:
+```bash
+chmod +x ~/importar-roms.sh
+~/importar-roms.sh
+```
+
+**Modo por argumento** — sem editar o arquivo:
+```bash
+# ./importar-roms.sh <URL_DO_ZIP> <SISTEMA> [extrair|copiar]
+~/importar-roms.sh "http://exemplo.com/jogos.zip" gameandwatch extrair
+```
+
+| `MODO` | O que faz | Quando usar |
+|---|---|---|
+| `extrair` (padrão) | Descompacta o conteúdo do ZIP na pasta de ROMs | Game & Watch, homebrew, ports |
+| `copiar` | Copia o próprio `.zip` sem descompactar | **Arcade** (`fba`/`mame`): o romset não pode ser descompactado nem renomeado |
+
+`SISTEMA` é o nome da pasta em `~/RetroPie/roms` (ex.: `gameandwatch`, `fba`, `snes`).
+
+Depois: reiniciar o EmulationStation.
+```bash
+touch /tmp/es-restart && killall emulationstation
+```
+
+**Rodar direto do repo (sem baixar o arquivo antes)**
+```bash
+curl -sL https://raw.githubusercontent.com/lucasdcorrea1/arcade-games-setup/main/scripts/importar-roms.sh | bash -s -- "http://exemplo.com/jogos.zip" gameandwatch extrair
+```
 
 ---
 
