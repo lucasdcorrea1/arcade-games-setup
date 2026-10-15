@@ -49,7 +49,7 @@ Não precisa ler agora — consulte quando o problema aparecer.
 |---|---|
 | [scripts/importar-roms.sh](scripts/importar-roms.sh) | Baixa um ZIP de uma URL e importa como ROMs (genérico) |
 | [scripts/baixar-gw.sh](scripts/baixar-gw.sh) | Baixa todos os jogos Game & Watch do core `lr-gw` |
+| [scripts/baixar-livres.sh](scripts/baixar-livres.sh) | Baixa pacotes de jogos livres/homebrew de vários sistemas de uma vez |
 
 Como usar os scripts: [docs/04-adicionar-roms.md](docs/04-adicionar-roms.md).
-https://gogunlocked.com/ultimate-marvel-vs-capcom-3-free-download/
 
