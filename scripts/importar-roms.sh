@@ -12,7 +12,7 @@
 set -euo pipefail
 
 # ================== EDITE AQUI ==================
-ZIP_URL="http://exemplo.com/jogos.zip"   # URL do zip a importar
+ZIP_URL="https://archive.org/download/retropiebiosfilesconfiguredforeverysystem_20190904/Retropie%20Bios%20Files%20Configured%20for%20Every%20System.zip"   # URL do zip a importar
 SISTEMA="gameandwatch"                    # pasta em ~/RetroPie/roms
 MODO="extrair"                            # "extrair" ou "copiar"
 # ===============================================
