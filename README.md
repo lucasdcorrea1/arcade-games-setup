@@ -27,6 +27,7 @@ Faça um passo de cada vez. Os 4 primeiros são o caminho mínimo pra ter jogos 
 | **7** | [Shader CRT](docs/07-shader-crt.md) | Deixar a imagem com cara de TV antiga |
 | **8** | [Cheats](docs/08-cheats.md) | Trapaças nos jogos de arcade (FBNeo) |
 | **9** | [Atalhos do RetroArch](docs/09-atalhos-retroarch.md) | Teclas pra salvar, sair, resetar dentro do jogo |
+| **10** | [Temas da home](docs/14-temas.md) | Mudar o visual da tela de seleção de jogos |
 
 ---
 
@@ -50,6 +51,7 @@ Não precisa ler agora — consulte quando o problema aparecer.
 | [scripts/importar-roms.sh](scripts/importar-roms.sh) | Baixa um ZIP de uma URL e importa como ROMs (genérico) |
 | [scripts/baixar-gw.sh](scripts/baixar-gw.sh) | Baixa todos os jogos Game & Watch do core `lr-gw` |
 | [scripts/baixar-livres.sh](scripts/baixar-livres.sh) | Baixa pacotes de jogos livres/homebrew de vários sistemas de uma vez |
+| [scripts/instalar-temas.sh](scripts/instalar-temas.sh) | Instala vários temas (skins) da home de uma vez |
 
 Como usar os scripts: [docs/04-adicionar-roms.md](docs/04-adicionar-roms.md).
 
