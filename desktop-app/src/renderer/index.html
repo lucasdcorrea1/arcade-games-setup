@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>RetroPie ROM Sender</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="tl">
+      <button class="tl-btn tl-close" id="winClose" title="Fechar"></button>
+      <button class="tl-btn tl-min" id="winMin" title="Minimizar"></button>
+      <button class="tl-btn tl-max" id="winMax" title="Maximizar"></button>
+    </div>
+    <div class="brand"><span class="ico brand-ico" data-icon="gamepad"></span> RetroPie ROM Sender</div>
+    <button id="connBtn" class="conn-btn">
+      <span id="connDot" class="dot off"></span>
+      <span id="connText">Conectar</span>
+      <span class="ico" data-icon="settings"></span>
+    </button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="baixar"><span class="ico" data-icon="gamepad"></span> Baixar</button>
+    <button class="tab" data-tab="meus"><span class="ico" data-icon="library"></span> Meus jogos</button>
+    <button class="tab" data-tab="temas"><span class="ico" data-icon="star"></span> Temas</button>
+  </nav>
+
+  <!-- BAIXAR -->
+  <section class="panel active" data-panel="baixar">
+    <div class="urlbar">
+      <button id="navBack" class="icon-btn" title="Voltar"><span class="ico" data-icon="back"></span></button>
+      <button id="navForward" class="icon-btn" title="Avançar"><span class="ico" data-icon="forward"></span></button>
+      <button id="navReload" class="icon-btn" title="Recarregar"><span class="ico" data-icon="reload"></span></button>
+      <input id="navUrl" type="text" spellcheck="false" />
+      <button id="navHome" class="icon-btn" title="Página inicial do site"><span class="ico" data-icon="home"></span></button>
+      <button id="dlGame" class="primary" title="Baixa o jogo da página aberta, sem contador nem anúncio">
+        <span class="ico" data-icon="download"></span> Baixar este jogo
+      </button>
+      <button id="batchBtn" title="Baixa TODOS os jogos desta categoria, página por página, e envia sozinho">
+        <span class="ico" data-icon="bolt"></span> Baixar categoria
+      </button>
+      <button id="impPick" title="Enviar um arquivo que você já tem no PC">
+        <span class="ico" data-icon="folder"></span> Importar do PC
+      </button>
+      <label class="autochk" title="Ao baixar, já envia pro fliperama e busca a capa sozinho">
+        <input id="autoSend" type="checkbox" />
+        <span class="ico" data-icon="bolt"></span> Automático
+      </label>
+    </div>
+    <div class="browse-body">
+      <webview id="browser" partition="persist:browse"></webview>
+    </div>
+
+    <!-- Send bar (shared by downloads and PC imports) -->
+    <div id="sendBar" class="sendbar hidden">
+      <div class="sb-info">
+        <div class="sb-file" id="sbFile">—</div>
+        <div class="sb-sys">
+          Console: <b id="sbConsole">—</b>
+          <button id="sbChange" class="linkbtn">trocar</button>
+        </div>
+      </div>
+      <div class="sb-actions">
+        <span id="sbStatus" class="status"></span>
+        <button id="sbCancel">Descartar</button>
+        <button id="sbSend" class="primary"><span class="ico" data-icon="check"></span> Enviar pro fliperama</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEUS JOGOS -->
+  <section class="panel" data-panel="meus">
+    <div class="lib-head">
+      <h2>Minha biblioteca</h2>
+      <div class="lib-tools">
+        <span id="libTotalSize" class="lib-total"></span>
+        <label class="lib-sortlab">Ordenar
+          <select id="libSort">
+            <option value="size-desc">Maiores primeiro</option>
+            <option value="size-asc">Menores primeiro</option>
+            <option value="name">Nome (A→Z)</option>
+            <option value="fav">Favoritos / com capa</option>
+          </select>
+        </label>
+        <button id="libReload"><span class="ico" data-icon="reload"></span> Atualizar</button>
+      </div>
+    </div>
+    <p class="hint">Mostra tudo que já está no fliperama, com o tamanho de cada jogo e as capas
+      que existem na Raspberry. Ordene por tamanho pra achar os pesados sem uso. Clique num jogo
+      pra trocar a capa; use a lixeira pra remover.</p>
+    <div id="libStatus" class="status"></div>
+    <div id="libContainer"></div>
+  </section>
+
+  <!-- TEMAS -->
+  <section class="panel" data-panel="temas">
+    <div class="lib-head">
+      <h2>Temas do fliperama</h2>
+      <button id="themeReload"><span class="ico" data-icon="reload"></span> Atualizar</button>
+    </div>
+    <p class="hint">Escolha um dos temas já instalados na sua Raspberry. Ao clicar, o app troca o tema
+      e reinicia o EmulationStation pra aplicar. O tema atual aparece destacado.</p>
+    <div id="themeStatus" class="status"></div>
+    <div id="themeGrid" class="theme-grid"></div>
+  </section>
+
+  <!-- CONSOLE PICKER MODAL -->
+  <div id="consoleModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Qual é o console deste jogo?</span>
+        <button id="consoleModalClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+      </div>
+      <div class="console-grid" id="consoleGridModal"></div>
+    </div>
+  </div>
+
+  <!-- BATCH (whole-category) MODAL -->
+  <div id="batchModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Baixar a categoria inteira</span>
+        <button id="batchModalClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+      </div>
+      <p class="hint">O app vai ler todas as páginas desta categoria, baixar cada jogo pro seu
+        disco e já enviar pro fliperama — sozinho. Você pode pausar ou parar a qualquer momento
+        na barra de baixo.</p>
+      <div class="field">
+        <label>Categoria (página aberta no navegador)</label>
+        <input id="batchUrl" type="text" readonly class="readonly" />
+      </div>
+      <div class="field">
+        <label>Enviar para a pasta / emulador</label>
+        <select id="batchFolder"></select>
+      </div>
+      <label class="check">
+        <input id="batchSkip" type="checkbox" checked />
+        Pular jogos que já estão no disco (recomendado)
+      </label>
+      <div class="row">
+        <span id="batchStatus" class="status grow"></span>
+        <button id="batchCancel">Cancelar</button>
+        <button id="batchGo" class="primary"><span class="ico" data-icon="bolt"></span> Começar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONNECTION MODAL -->
+  <div id="connModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Conexão com a Raspberry Pi</span>
+        <button id="connModalClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+      </div>
+      <div class="row">
+        <div class="field grow">
+          <label>IP da Raspberry</label>
+          <input id="setHost" type="text" placeholder="192.168.0.xx" />
+        </div>
+        <div class="field small">
+          <label>Porta</label>
+          <input id="setPort" type="number" value="22" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field grow">
+          <label>Usuário</label>
+          <input id="setUser" type="text" value="pi" />
+        </div>
+        <div class="field grow">
+          <label>Senha</label>
+          <input id="setPass" type="password" value="123456" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Pasta base das ROMs (na Raspberry)</label>
+        <input id="setBase" type="text" value="/home/pi/RetroPie/roms" />
+      </div>
+      <div class="field">
+        <label>Pasta das ROMs no seu PC (disco D:) — tudo que você baixa fica guardado aqui</label>
+        <div class="row">
+          <input id="setLibrary" type="text" class="grow" placeholder="D:\Arcade-ROMs" />
+          <button id="setLibPick" title="Escolher pasta">Escolher…</button>
+          <button id="setLibOpen" title="Abrir a pasta no Explorer"><span class="ico" data-icon="folder"></span> Abrir</button>
+        </div>
+      </div>
+      <label class="check">
+        <input id="setRestart" type="checkbox" checked />
+        Reiniciar o EmulationStation após cada envio
+      </label>
+
+      <div class="maint">
+        <div class="maint-head">
+          <span>Manutenção da Raspberry (via WiFi)</span>
+          <span id="setDisk" class="status"></span>
+        </div>
+        <div class="row">
+          <button id="setDiskBtn"><span class="ico" data-icon="library"></span> Ver espaço no cartão</button>
+          <button id="setReboot" class="danger" title="Reinicia a Raspberry">Reiniciar a Raspberry</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <span id="setStatus" class="status grow"></span>
+        <button id="setDiscover"><span class="ico" data-icon="reload"></span> Procurar na rede</button>
+        <button id="setTest">Testar</button>
+        <button id="setSave" class="primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="folderList"></datalist>
+
+  <!-- QUEUE DRAWER (expandable list of the batch) -->
+  <div id="queueDrawer" class="queue-drawer hidden">
+    <div class="qd-head">
+      <span id="qdTitle">Fila de download</span>
+      <button id="qdClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+    </div>
+    <div id="qdList" class="qd-list"></div>
+  </div>
+
+  <!-- PERSISTENT BOTTOM STATUS BAR -->
+  <footer id="statusbar" class="statusbar">
+    <span class="sbar-ico ico" data-icon="bolt" id="sbarIco"></span>
+    <div class="sbar-main">
+      <div class="sbar-text" id="sbarText">Pronto</div>
+      <div class="sbar-track"><div class="sbar-fill" id="sbarFill"></div></div>
+    </div>
+    <span class="sbar-count" id="sbarCount"></span>
+    <div class="sbar-actions" id="sbarActions">
+      <button id="sbarList" class="mini" title="Ver a fila">Fila</button>
+      <button id="sbarPause" class="mini hidden" title="Pausar">Pausar</button>
+      <button id="sbarResume" class="mini hidden" title="Continuar">Continuar</button>
+      <button id="sbarStop" class="mini danger hidden" title="Parar">Parar</button>
+    </div>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

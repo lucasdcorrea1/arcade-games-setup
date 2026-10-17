@@ -1,0 +1,43 @@
+{
+  "name": "retropie-rom-sender",
+  "version": "1.0.0",
+  "description": "Desktop app to browse ROM sites, intercept downloads and send them to a RetroPie over SFTP into the correct emulator folder.",
+  "main": "src/main.js",
+  "author": "Lucas Correa",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir",
+    "make-icon": "node scripts/make-icon.js"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.7",
+    "ssh2": "^1.16.0",
+    "ssh2-sftp-client": "^11.0.0"
+  },
+  "build": {
+    "appId": "com.lucascorrea.retropieromsender",
+    "productName": "RetroPie ROM Sender",
+    "files": [
+      "src/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "artifactName": "RetroPie-ROM-Sender-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "RetroPie-ROM-Sender-${version}-portable.exe"
+    }
+  }
+}

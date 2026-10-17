@@ -55,3 +55,13 @@ Não precisa ler agora — consulte quando o problema aparecer.
 
 Como usar os scripts: [docs/04-adicionar-roms.md](docs/04-adicionar-roms.md).
 
+---
+
+## 🖥️ App de desktop (opcional)
+
+[`desktop-app/`](desktop-app/) — **RetroPie ROM Sender**: um app Electron (Windows
+`.exe`) com navegador embutido. Você navega no site de ROMs, clica em download e o app
+intercepta o arquivo e envia direto pra Pi (SFTP, `pi`/`123456`/IP) na pasta certa do
+emulador, reiniciando o EmulationStation. Faz na interface o que os scripts fazem na
+linha de comando. Detalhes em [desktop-app/README.md](desktop-app/README.md).
+
