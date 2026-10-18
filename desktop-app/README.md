@@ -16,6 +16,43 @@ O fluxo é o mesmo que você já fazia, só que automático:
 > (contadores, etc.). O app só pega o arquivo resultante e cuida da transferência.
 > Baixe apenas jogos que você tem o direito de usar.
 
+## ⬇️ Baixar
+
+- **[Baixar o portable (roda sem instalar)](https://github.com/lucasdcorrea1/arcade-do-zero/releases/latest/download/RetroPie-ROM-Sender-portable.exe)**
+- **[Baixar o instalador (.exe)](https://github.com/lucasdcorrea1/arcade-do-zero/releases/latest/download/RetroPie-ROM-Sender-Setup.exe)**
+- Todas as versões: [releases](https://github.com/lucasdcorrea1/arcade-do-zero/releases) · Site: [arcade-do-zero](https://lucasdcorrea1.github.io/arcade-do-zero/)
+
+Windows 64-bit. Os links acima **sempre apontam para a versão mais recente**.
+
+## ✅ É open source — por que você pode confiar
+
+Baixar e rodar um `.exe` da internet pede cautela — e você está certo em desconfiar.
+Por isso este app é **100% código aberto (licença MIT)**:
+
+- 🔓 **Leia o código antes de rodar.** Todo o funcionamento está em [`desktop-app/src/`](./src).
+  Nada é ofuscado ou escondido.
+- 🛠️ **Não confie no meu `.exe` — gere o seu.** A prova de confiança definitiva: em 3 comandos
+  você compila o app a partir do código e obtém o **mesmo** programa (veja
+  [*Gerar o .exe*](#gerar-o-exe-para-distribuir)). Aí você não depende do arquivo que eu publiquei.
+- 🕵️ **Sem rastreio, sem telemetria, sem conta.** O app **não envia nada** pra servidores meus.
+  Ele só conversa com: (1) o site de ROMs que **você** abre no navegador embutido e (2) a
+  **sua** Raspberry Pi, na sua rede local.
+- 💾 **Seus dados ficam só no seu PC.** IP e senha da Pi vão para
+  `%APPDATA%/retropie-rom-sender/settings.json` — nada sobe pra lugar nenhum.
+- 🪪 **Licença MIT** — use, estude, modifique e distribua livremente.
+
+### ⚠️ "O Windows protegeu o seu PC" (SmartScreen)
+
+Como o app é **gratuito e sem assinatura digital paga** (um certificado de código custa caro),
+o Windows pode mostrar um aviso azul ao abrir. **Isso é esperado para qualquer app novo sem
+certificado — não quer dizer vírus.** Para rodar:
+
+1. Clique em **"Mais informações"**.
+2. Clique em **"Executar assim mesmo"**.
+
+Se preferir não confiar no `.exe`, **compile o seu** (seção abaixo) — o resultado é idêntico,
+sem o aviso de "autor desconhecido" para você mesmo.
+
 ## Abas
 
 - **Baixar** — navegador embutido (começa no retrostic). Baixou, aparece um painel
