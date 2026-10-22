@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://raw.githubusercontent.com https://github.com;" />
   <title>RetroPie ROM Sender</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -26,6 +26,7 @@
     <button class="tab active" data-tab="baixar"><span class="ico" data-icon="gamepad"></span> Baixar</button>
     <button class="tab" data-tab="meus"><span class="ico" data-icon="library"></span> Meus jogos</button>
     <button class="tab" data-tab="temas"><span class="ico" data-icon="star"></span> Temas</button>
+    <button class="tab" data-tab="novo"><span class="ico" data-icon="sd"></span> Novo fliperama</button>
   </nav>
 
   <!-- BAIXAR -->
@@ -101,10 +102,151 @@
       <h2>Temas do fliperama</h2>
       <button id="themeReload"><span class="ico" data-icon="reload"></span> Atualizar</button>
     </div>
-    <p class="hint">Escolha um dos temas já instalados na sua Raspberry. Ao clicar, o app troca o tema
-      e reinicia o EmulationStation pra aplicar. O tema atual aparece destacado.</p>
+    <p class="hint">O tema é o visual da tela do fliperama: o menu dos videogames e a lista de jogos.
+      Clique num tema para ver como ele fica, usar, apagar ou baixar.</p>
     <div id="themeStatus" class="status"></div>
-    <div id="themeGrid" class="theme-grid"></div>
+
+    <h3 class="th-sec">No fliperama <span id="themeCount" class="th-count"></span></h3>
+    <div id="themeGrid" class="tgrid"></div>
+
+    <div class="th-sec-row">
+      <h3 class="th-sec">Baixar mais temas <span id="catCount" class="th-count"></span></h3>
+      <span id="themeFree" class="lib-total"></span>
+    </div>
+    <div class="th-filters">
+      <input id="catSearch" type="search" placeholder="Procurar tema…" spellcheck="false" />
+      <select id="catSort" title="Ordem">
+        <option value="pop">Mais populares</option>
+        <option value="new">Mais novos</option>
+        <option value="name">Nome (A→Z)</option>
+      </select>
+      <select id="catOwner" title="Quem fez o tema"><option value="">Todos os criadores</option></select>
+      <select id="catSource" title="De onde vem o tema">
+        <option value="">Oficiais e da comunidade</option>
+        <option value="official">Só os oficiais do RetroPie</option>
+        <option value="community">Só os da comunidade</option>
+      </select>
+      <div id="catTone" class="th-chips" role="group" aria-label="Cor">
+        <button class="chip on" data-tone="">Todas as cores</button>
+        <button class="chip" data-tone="dark">Escuros</button>
+        <button class="chip" data-tone="light">Claros</button>
+        <button class="chip" data-tone="color">Coloridos</button>
+      </div>
+    </div>
+    <div class="th-opts">
+      <label class="th-prev"><input id="catPrev" type="checkbox" checked /> Só com foto</label>
+      <label id="catWorksLabel" class="th-prev hidden"><input id="catWorks" type="checkbox" checked /> Só os que funcionam no meu fliperama</label>
+      <label class="th-prev"><input id="catHidden" type="checkbox" /> Ver os que escondi <span id="catHiddenCount"></span></label>
+      <span id="catProgress" class="th-progress"></span>
+    </div>
+    <div id="catGrid" class="tgrid"></div>
+    <p id="catEnd" class="th-end"></p>
+  </section>
+
+  <!-- THEME PREVIEW MODAL -->
+  <div id="themeModal" class="modal hidden">
+    <div class="modal-card tm-card">
+      <div class="modal-head">
+        <span><b id="tmName"></b> <span id="tmBy" class="tm-by"></span></span>
+        <button id="tmClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+      </div>
+      <p id="tmDesc" class="tm-desc hidden"></p>
+      <p id="tmCompat" class="tm-compat hidden"></p>
+      <div id="tmShots" class="tm-shots"></div>
+      <div class="row tm-actions">
+        <button id="tmMain" class="primary"></button>
+        <button id="tmDelete" class="danger"><span class="ico" data-icon="trash"></span> Apagar do fliperama</button>
+        <span id="tmStatus" class="status grow"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOVO FLIPERAMA -->
+  <section class="panel" data-panel="novo">
+    <div class="lib-head"><h2>Novo fliperama</h2></div>
+    <p id="nfCheck" class="status"></p>
+
+    <!-- an arcade that already works: show it, keep reinstalling one click away -->
+    <div id="nfReady" class="nf-ready hidden">
+      <div class="nf-ready-head">
+        <span class="nf-ok"><span class="ico" data-icon="check"></span></span>
+        <div>
+          <h3>Seu fliperama já está pronto</h3>
+          <p id="nfReadySub" class="hint"></p>
+        </div>
+      </div>
+      <dl id="nfInfo" class="nf-info"></dl>
+      <ul id="nfNotes" class="nf-notes"></ul>
+      <div class="row nf-row">
+        <button id="nfReinstall"><span class="ico" data-icon="sd"></span> Reinstalar do zero</button>
+        <span class="status">Apaga tudo do cartão e instala o RetroPie mais novo.</span>
+      </div>
+    </div>
+
+    <div id="nfWizard" class="hidden">
+    <p class="hint">Transforme um cartão de memória vazio num fliperama pronto. O app baixa o RetroPie, grava o
+      cartão e já deixa o Wi-Fi configurado. Depois é só colocar o cartão na Raspberry e ligar.</p>
+    <ol class="nf-steps">
+      <li class="nf-step">
+        <span class="nf-n">1</span>
+        <div>
+          <h3>Qual é a sua Raspberry?</h3>
+          <p class="hint">O modelo vem escrito na placa (ex.: "Raspberry Pi 3 Model B").</p>
+          <div id="nfModels" class="theme-grid nf-grid"></div>
+        </div>
+      </li>
+      <li class="nf-step">
+        <span class="nf-n">2</span>
+        <div>
+          <h3>Wi-Fi do fliperama</h3>
+          <p class="hint">Já vem preenchido com a rede deste computador. Deixe em branco para usar só o cabo.</p>
+          <div class="row">
+            <div class="field grow"><label>Rede (nome do Wi-Fi)</label><input id="nfSsid" type="text" spellcheck="false" /></div>
+            <div class="field grow"><label>Senha do Wi-Fi</label><input id="nfPass" type="password" /></div>
+          </div>
+          <button id="nfKey"><span class="ico" data-icon="check"></span> Usar a senha salva neste computador</button>
+          <span id="nfKeyStatus" class="status"></span>
+          <p id="nfWifiWarn" class="nf-warn hidden"></p>
+        </div>
+      </li>
+      <li class="nf-step">
+        <span class="nf-n">3</span>
+        <div>
+          <h3>Cartão de memória</h3>
+          <p class="hint">Só aparecem cartões e pendrives. O disco do computador nunca entra nesta lista.</p>
+          <div id="nfDisks" class="theme-grid nf-grid"></div>
+          <div class="row nf-row">
+            <button id="nfDiskReload"><span class="ico" data-icon="reload"></span> Atualizar lista</button>
+            <span id="nfDiskStatus" class="status"></span>
+          </div>
+        </div>
+      </li>
+      <li class="nf-step">
+        <span class="nf-n">4</span>
+        <div>
+          <h3>Gravar o cartão</h3>
+          <p class="hint">Tudo o que estiver no cartão será apagado. O Windows vai pedir permissão de administrador
+            uma vez. Se ele pedir para formatar o cartão no final, clique em <b>Cancelar</b>: é normal.</p>
+          <div class="row nf-row">
+            <button id="nfWrite" class="primary" disabled><span class="ico" data-icon="sd"></span> Gravar cartão</button>
+            <span id="nfWriteStatus" class="status"></span>
+          </div>
+        </div>
+      </li>
+      <li class="nf-step">
+        <span class="nf-n">5</span>
+        <div>
+          <h3>Ligar e conectar</h3>
+          <p class="hint">Tire o cartão, coloque na Raspberry e ligue. A primeira vez leva uns 3 minutos. Depois
+            clique abaixo: o app acha o fliperama, dá o nome "fliperama" e já deixa ele conectado aqui.</p>
+          <div class="row nf-row">
+            <button id="nfFind"><span class="ico" data-icon="reload"></span> Encontrar o fliperama</button>
+            <span id="nfFindStatus" class="status"></span>
+          </div>
+        </div>
+      </li>
+    </ol>
+    </div>
   </section>
 
   <!-- CONSOLE PICKER MODAL -->

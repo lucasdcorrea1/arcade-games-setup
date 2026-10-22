@@ -25,7 +25,8 @@ const ICONS = {
   check: '<path d="M5 12.5 10 17 19 7"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/>',
   pencil: '<path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16z"/>',
-  star: '<path d="M12 3.5 14.6 9l6 .5-4.5 3.9 1.4 5.8L12 16.9 6.5 19.2l1.4-5.8L3.4 9.5 9.4 9z"/>'
+  star: '<path d="M12 3.5 14.6 9l6 .5-4.5 3.9 1.4 5.8L12 16.9 6.5 19.2l1.4-5.8L3.4 9.5 9.4 9z"/>',
+  sd: '<path d="M8 3h8.5L19 5.5V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6z"/><path d="M9 7v3M12 7v3M15 7v3"/>'
 };
 function svgIcon(name, extraClass) {
   const body = ICONS[name] || '';
@@ -74,6 +75,7 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.querySelector(`.panel[data-panel="${btn.dataset.tab}"]`).classList.add('active');
     if (btn.dataset.tab === 'meus' && !libraryLoaded) loadLibrary();
     if (btn.dataset.tab === 'temas' && !themesLoaded) loadThemes();
+    if (btn.dataset.tab === 'novo' && !setupLoaded) loadSetup();
   });
 });
 
@@ -699,74 +701,543 @@ $('libReload').addEventListener('click', loadLibrary);
 $('libSort').addEventListener('change', () => { librarySort = $('libSort').value; renderLibrary(); });
 
 // ---------------------------------------------------------------------------
-// "Temas" — switch the EmulationStation theme among the ones already on the Pi
+// "Temas" — see what each EmulationStation theme looks like, use it, delete it
+// or download more: RetroPie's catalog (previews from the official gallery) plus
+// popular community themes, ranked by GitHub stars, with an endless list.
 // ---------------------------------------------------------------------------
 let themesLoaded = false;
 let applyingTheme = false;
+const th = {
+  installed: [], current: '', strict: false, catalog: [], byId: {}, list: [], shown: 0, open: null, busy: false,
+  tone: '', thumbs: new Map(), thumbReq: new Map(), hidden: loadHiddenThemes(), checking: { done: 0, total: 0 }
+};
+const CAT_PAGE = 24;
+const HIDDEN_THEMES_KEY = 'hiddenThemes';
+// Average tone of a preview (0..1): what counts as dark, light and colorful (each about a third of the
+// gallery).
+const TONES = {
+  dark: (t) => t.light < 0.25,
+  light: (t) => t.light > 0.45,
+  color: (t) => t.color > 0.25
+};
+const THEME_SORTS = {
+  pop: (a, b) => (b.stars - a.stars) || (b.preview.length > 0) - (a.preview.length > 0) || a.idx - b.idx,
+  new: (a, b) => (b.updated || '').localeCompare(a.updated || '') || a.idx - b.idx,
+  name: (a, b) => a.id.localeCompare(b.id, 'pt', { sensitivity: 'base' })
+};
+
+function loadHiddenThemes() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_THEMES_KEY)) || []); } catch { return new Set(); }
+}
+function saveHiddenThemes() {
+  try { localStorage.setItem(HIDDEN_THEMES_KEY, JSON.stringify([...th.hidden])); } catch { /* kept for this session */ }
+}
+
+// Small cached copy of a preview. Cards on screen ask first; a background pass fills in the rest so the
+// color filter knows every theme.
+function requestThumb(url, background = false) {
+  const pending = th.thumbReq.get(url);
+  if (pending) {
+    if (!background) window.api.themesThumb(url).catch(() => null); // jump the queue
+    return pending;
+  }
+  const p = window.api.themesThumb(url, { background }).catch(() => null).then((t) => {
+    th.thumbs.set(url, t);
+    th.thumbReq.delete(url);
+    onThumbsProgress();
+    return t;
+  });
+  th.thumbReq.set(url, p);
+  return p;
+}
+
+function fillShot(shot, url) {
+  const noPreview = () => {
+    const s = document.createElement('span');
+    s.className = 'tnone';
+    s.textContent = 'sem foto';
+    shot.classList.add('none');
+    shot.prepend(s);
+  };
+  if (!url) return noPreview();
+  const img = document.createElement('img');
+  img.alt = '';
+  shot.prepend(img);
+  const show = (t) => { if (t) img.src = t.src; else { img.remove(); noPreview(); } };
+  if (th.thumbs.has(url)) show(th.thumbs.get(url));
+  else requestThumb(url).then(show);
+}
+
+function themeCard(name, sub, preview, { current = false, badge = '', broken = false, hideable = false } = {}) {
+  const card = document.createElement('button');
+  card.className = 'tcard' + (current ? ' current' : '') + (broken ? ' broken' : '');
+  card.dataset.id = name;
+  const shot = document.createElement('div');
+  shot.className = 'tshot';
+  fillShot(shot, preview);
+  if (badge || broken) {
+    const b = document.createElement('span');
+    b.className = 'tbadge' + (current ? ' cur' : '') + (broken && !badge ? ' bad' : '');
+    b.textContent = badge || 'NÃO ABRE';
+    shot.appendChild(b);
+  }
+  if (hideable) {
+    const h = document.createElement('span');
+    const hidden = th.hidden.has(name);
+    h.className = 'thide';
+    h.setAttribute('role', 'button');
+    h.title = hidden ? 'Voltar a mostrar este tema' : 'Esconder este tema (não gostei)';
+    h.textContent = hidden ? 'Mostrar de novo' : '✕';
+    h.addEventListener('click', (ev) => { ev.stopPropagation(); toggleHiddenTheme(name); });
+    shot.appendChild(h);
+  }
+  const n = document.createElement('span'); n.className = 'tc-name'; n.textContent = name;
+  const s = document.createElement('span'); s.className = 'tc-sub'; s.textContent = sub;
+  card.append(shot, n, s);
+  return card;
+}
+
+function themeSub(e) {
+  return [e.owner, e.stars ? `★ ${e.stars}` : '', e.community ? 'comunidade' : ''].filter(Boolean).join(' · ');
+}
+
+// Known not to load on this cabinet's EmulationStation (community themes must be confirmed first).
+const themeBroken = (e) => th.strict && e.compat === false;
+const themeWorks = (e) => !th.strict || (e.community ? e.compat === true : e.compat !== false);
+
+function refreshThemeFree() {
+  window.api.piDisk(settings)
+    .then((d) => { $('themeFree').textContent = d.avail ? `Espaço livre no fliperama: ${d.avail.replace(/([\d.,]+)([KMGT])$/, '$1 $2B')}` : ''; })
+    .catch(() => { $('themeFree').textContent = ''; });
+}
 
 async function loadThemes() {
   if (!requireHost()) return;
-  setStatus($('themeStatus'), 'Lendo os temas instalados na Raspberry…');
+  setStatus($('themeStatus'), 'Lendo os temas do fliperama…');
   $('themeGrid').innerHTML = '';
+  const catalog = window.api.themesCatalog().catch(() => []);
+  const bundled = window.api.themesBundled().catch(() => null);
   try {
-    const { themes, current } = await window.api.piThemes(settings);
+    th.bundled = await bundled;
+    const pi = await window.api.piThemes(settings);
+    th.installed = pi.themes;
+    th.current = pi.current;
+    // The compatibility check follows EmulationStation 2.7 (RetroPie 4.4); newer ones load more themes.
+    th.strict = /^2\.[0-7]\./.test(pi.esVersion || '');
     themesLoaded = true;
-    renderThemes(themes, current);
-    setStatus($('themeStatus'),
-      themes.length ? `${themes.length} tema(s) instalado(s). Atual: ${current || '—'}.`
-                    : 'Nenhum tema encontrado em /etc/emulationstation/themes.',
-      themes.length ? 'ok' : 'err');
+    renderInstalled();
+    refreshThemeFree();
   } catch (err) {
-    setStatus($('themeStatus'), 'Erro: ' + err.message, 'err');
+    setStatus($('themeStatus'), plainError(err), 'err');
+    return;
+  }
+  setStatus($('themeStatus'), 'Buscando temas para baixar… (na primeira vez leva uns segundos)');
+  const cat = await catalog;
+  cat.forEach((e, i) => { e.idx = i; });
+  th.catalog = cat;
+  th.byId = Object.fromEntries(cat.map((e) => [e.id, e]));
+  $('catWorksLabel').classList.toggle('hidden', !th.strict);
+  fillOwnerFilter();
+  renderInstalled();
+  renderCatalog();
+  setStatus($('themeStatus'), cat.length ? '' : 'Não consegui baixar a lista de temas agora (sem internet?). Os instalados aparecem normalmente.', cat.length ? '' : 'err');
+  startThemeBackgroundWork();
+}
+
+function fillOwnerFilter() {
+  const counts = {};
+  for (const e of th.catalog) counts[e.owner] = (counts[e.owner] || 0) + 1;
+  const sel = $('catOwner');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">Todos os criadores</option>';
+  for (const [owner, n] of Object.entries(counts).sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))) {
+    const o = document.createElement('option');
+    o.value = owner;
+    o.textContent = `${owner} (${n})`;
+    sel.appendChild(o);
+  }
+  sel.value = counts[keep] ? keep : '';
+}
+
+// Thumbnails for every preview (for the color filter) and, on an older EmulationStation, which themes load.
+function startThemeBackgroundWork() {
+  const order = [...th.list, ...th.catalog.filter((e) => !th.list.includes(e))];
+  for (const e of order) if (e.preview[0]) requestThumb(e.preview[0], true);
+  if (!th.strict) return;
+  const ids = order.filter((e) => !e.checked).map((e) => e.id);
+  th.checking = { done: 0, total: ids.length };
+  updateThemeProgress();
+  if (ids.length) window.api.themesCheckAll(ids).catch(() => {});
+}
+
+window.api.onThemesCompat((r) => {
+  const e = th.byId[r.id];
+  if (!e) return;
+  e.compat = r.ok;
+  e.checked = true;
+  th.checking.done++;
+  updateThemeProgress();
+  scheduleCatalogRefresh();
+  if (th.open === r.id) updateThemeModal();
+});
+
+function onThumbsProgress() {
+  if (th.tone) scheduleCatalogRefresh();
+  updateThemeProgress();
+}
+
+function updateThemeProgress() {
+  const parts = [];
+  const { done, total } = th.checking;
+  if (total && done < total) parts.push(`Conferindo quais funcionam no seu fliperama… ${done} de ${total}`);
+  if (th.tone) {
+    const urls = th.catalog.filter((e) => e.preview[0]).map((e) => e.preview[0]);
+    const ready = urls.filter((u) => th.thumbs.has(u)).length;
+    if (ready < urls.length) parts.push(`Separando por cor… ${ready} de ${urls.length}`);
+  }
+  $('catProgress').textContent = parts.join(' · ');
+}
+
+// The app's own theme: pinned first, always offered (even before it is on the
+// Pi) and never deletable, only swapped for another one.
+const isBundledTheme = (id) => Boolean(th.bundled) && id === th.bundled.id;
+
+function bundledThemeCard() {
+  const b = th.bundled;
+  const cur = b.id === th.current;
+  const card = themeCard(b.name, cur ? 'em uso agora' : 'tema padrão do app', null, { current: cur, badge: cur ? 'EM USO' : 'PADRÃO' });
+  card.dataset.id = b.id;
+  if (b.preview[0]) {
+    const shot = card.querySelector('.tshot');
+    shot.classList.remove('none');
+    shot.querySelector('.tnone')?.remove();
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = b.preview[0];
+    shot.prepend(img);
+  }
+  card.addEventListener('click', () => openThemeModal(b.id));
+  return card;
+}
+
+function openBundledThemeModal() {
+  const b = th.bundled;
+  th.open = b.id;
+  $('tmName').textContent = b.name;
+  $('tmBy').textContent = 'Tema padrão do app · feito para o seu fliperama';
+  $('tmDesc').textContent = 'Arte própria para cada videogame, roda de videogames na lateral e uma vitrine com os jogos que tem dentro de cada um. Esse tema não pode ser apagado, só trocado por outro.';
+  $('tmDesc').classList.remove('hidden');
+  const shots = $('tmShots');
+  shots.innerHTML = '';
+  ['Menu dos videogames', 'Lista de jogos'].forEach((label, i) => {
+    if (!b.preview[i]) return;
+    const fig = document.createElement('figure');
+    const box = document.createElement('div');
+    box.className = 'tm-shot';
+    const img = document.createElement('img');
+    img.alt = label;
+    img.src = b.preview[i];
+    box.appendChild(img);
+    const cap = document.createElement('figcaption');
+    cap.textContent = label;
+    fig.append(box, cap);
+    shots.appendChild(fig);
+  });
+  setStatus($('tmStatus'), '');
+  updateThemeModal();
+  $('themeModal').classList.remove('hidden');
+}
+
+async function useBundledTheme() {
+  if (applyingTheme) return;
+  applyingTheme = true;
+  th.busy = true;
+  updateThemeModal();
+  setStatus($('tmStatus'), 'Preparando o tema no fliperama…');
+  statusBar.set(`Aplicando o tema "${th.bundled.name}"…`, { indet: true, green: true });
+  try {
+    await window.api.themesUseBundled(settings);
+    th.current = th.bundled.id;
+    if (!th.installed.includes(th.current)) th.installed = [...th.installed, th.current].sort((a, b) => a.localeCompare(b));
+    renderInstalled();
+    renderCatalog(true);
+    refreshThemeFree();
+    setStatus($('tmStatus'), 'Pronto! O fliperama vai reabrir já com esse tema.', 'ok');
+    statusBar.set(`Tema "${th.bundled.name}" aplicado ✅`, { percent: 100, kind: 'ok' });
+  } catch (err) {
+    setStatus($('tmStatus'), plainError(err), 'err');
+    statusBar.set('Falha ao aplicar o tema', { kind: 'err' });
+  } finally {
+    applyingTheme = false;
+    th.busy = false;
+    updateThemeModal();
   }
 }
 
-function renderThemes(themes, current) {
+function renderInstalled() {
   const grid = $('themeGrid');
   grid.innerHTML = '';
-  for (const name of themes) {
-    const card = document.createElement('button');
-    card.className = 'theme-card' + (name === current ? ' current' : '');
-    const n = document.createElement('span');
-    n.className = 'tc-name';
-    n.textContent = name;
-    const sub = document.createElement('span');
-    sub.className = 'tc-sub';
-    sub.textContent = name === current ? 'em uso agora' : 'clique para usar';
-    card.append(n, sub);
-    if (name === current) {
-      const badge = document.createElement('span');
-      badge.className = 'tc-badge';
-      badge.textContent = 'ATUAL';
-      card.appendChild(badge);
-    }
-    card.addEventListener('click', () => applyTheme(name, current));
+  const others = th.installed.filter((n) => !isBundledTheme(n));
+  $('themeCount').textContent = `(${others.length + (th.bundled ? 1 : 0)})`;
+  if (th.bundled) grid.appendChild(bundledThemeCard());
+  for (const name of others) {
+    const e = th.byId[name];
+    const cur = name === th.current;
+    const card = themeCard(name, cur ? 'em uso agora' : (e ? `de ${e.owner}` : 'instalado'), e && e.preview[0],
+      { current: cur, badge: cur ? 'EM USO' : '', broken: Boolean(e && themeBroken(e)) });
+    card.addEventListener('click', () => openThemeModal(name));
     grid.appendChild(card);
   }
 }
 
-async function applyTheme(name, current) {
-  if (applyingTheme || name === current) return;
+function catalogFiltered() {
+  const q = $('catSearch').value.trim().toLowerCase();
+  const owner = $('catOwner').value;
+  const source = $('catSource').value;
+  const onlyPreview = $('catPrev').checked;
+  const onlyWorking = th.strict && $('catWorks').checked;
+  const showHidden = $('catHidden').checked;
+  const toneOk = (e) => {
+    if (!th.tone) return true;
+    const t = e.preview[0] && th.thumbs.get(e.preview[0]);
+    return Boolean(t && TONES[th.tone](t.tone));
+  };
+  return th.catalog.filter((e) => th.hidden.has(e.id) === showHidden &&
+    (!onlyPreview || e.preview.length) &&
+    (!owner || e.owner === owner) &&
+    (!source || (source === 'community') === e.community) &&
+    (!onlyWorking || themeWorks(e)) &&
+    toneOk(e) &&
+    (!q || `${e.id} ${e.owner} ${e.desc}`.toLowerCase().includes(q))
+  ).sort(THEME_SORTS[$('catSort').value] || THEME_SORTS.pop);
+}
+
+// Rebuild the list from the filters; `keep` holds on to how far the user already scrolled.
+function renderCatalog(keep = false) {
+  const shown = keep ? th.shown : 0;
+  th.list = catalogFiltered();
+  th.shown = 0;
+  $('catGrid').innerHTML = '';
+  $('catCount').textContent = `(${th.list.length})`;
+  $('catHiddenCount').textContent = th.hidden.size ? `(${th.hidden.size})` : '';
+  appendCatalogCards(Math.max(shown, CAT_PAGE));
+}
+
+function appendCatalogCards(count = CAT_PAGE) {
+  const grid = $('catGrid');
+  for (const e of th.list.slice(th.shown, th.shown + count)) {
+    const installed = th.installed.includes(e.id);
+    const cur = e.id === th.current;
+    const card = themeCard(e.id, themeSub(e), e.preview[0],
+      { current: cur, badge: cur ? 'EM USO' : installed ? 'INSTALADO' : '', broken: themeBroken(e), hideable: true });
+    card.addEventListener('click', () => openThemeModal(e.id));
+    grid.appendChild(card);
+  }
+  th.shown = Math.min(th.list.length, th.shown + count);
+  const end = $('catEnd');
+  if (th.shown < th.list.length) end.textContent = '';
+  else if (!th.list.length) end.textContent = $('catHidden').checked ? 'Você não escondeu nenhum tema.' : 'Nenhum tema com esses filtros.';
+  else end.textContent = `Fim da lista: ${th.list.length} tema${th.list.length > 1 ? 's' : ''}.`;
+}
+
+// Endless list: the next cards come in before the end of the list scrolls into view.
+const themesPanel = document.querySelector('.panel[data-panel="temas"]');
+const catEndObserver = new IntersectionObserver((entries) => {
+  if (entries.some((en) => en.isIntersecting)) fillCatalogToViewport();
+}, { root: themesPanel, rootMargin: '0px 0px 700px 0px' });
+catEndObserver.observe($('catEnd'));
+
+function fillCatalogToViewport() {
+  const end = $('catEnd');
+  if (th.shown >= th.list.length || !end.offsetParent) return;
+  if (end.getBoundingClientRect().top > themesPanel.getBoundingClientRect().bottom + 700) return;
+  appendCatalogCards();
+  requestAnimationFrame(fillCatalogToViewport);
+}
+
+// Thumbnails and checks keep arriving; redraw at most about once a second.
+let catalogRefreshTimer = null;
+function scheduleCatalogRefresh() {
+  if (catalogRefreshTimer) return;
+  catalogRefreshTimer = setTimeout(() => { catalogRefreshTimer = null; renderCatalog(true); }, 1000);
+}
+
+function toggleHiddenTheme(id) {
+  if (th.hidden.has(id)) th.hidden.delete(id); else th.hidden.add(id);
+  saveHiddenThemes();
+  renderCatalog(true);
+}
+
+function openThemeModal(id) {
+  if (isBundledTheme(id)) return openBundledThemeModal();
+  th.open = id;
+  const e = th.byId[id];
+  $('tmName').textContent = id;
+  $('tmBy').textContent = e ? [`de ${e.owner}`, e.stars ? `★ ${e.stars}` : '', e.updated ? `atualizado em ${e.updated.slice(0, 4)}` : '',
+    e.community ? 'da comunidade' : 'lista oficial do RetroPie'].filter(Boolean).join(' · ') : '';
+  $('tmDesc').textContent = (e && e.desc) || '';
+  $('tmDesc').classList.toggle('hidden', !(e && e.desc));
+  const shots = $('tmShots');
+  shots.innerHTML = '';
+  const labels = e && !e.community ? ['Menu dos videogames', 'Lista de jogos'] : [];
+  if (e && e.preview.length) {
+    e.preview.forEach((src, i) => {
+      const fig = document.createElement('figure');
+      const box = document.createElement('div');
+      box.className = 'tm-shot loading';
+      const img = document.createElement('img');
+      img.alt = labels[i] || 'Prévia do tema';
+      box.appendChild(img);
+      fig.appendChild(box);
+      if (labels[i]) {
+        const cap = document.createElement('figcaption');
+        cap.textContent = labels[i];
+        fig.appendChild(cap);
+      }
+      shots.appendChild(fig);
+      window.api.themesThumb(src, { width: 1280 }).catch(() => null).then((t) => {
+        box.classList.remove('loading');
+        if (t) img.src = t.src; else fig.remove();
+      });
+    });
+  } else {
+    const p = document.createElement('p');
+    p.className = 'tm-none';
+    p.textContent = 'Esse tema não tem foto de prévia.';
+    shots.appendChild(p);
+  }
+  setStatus($('tmStatus'), '');
+  updateThemeModal();
+  $('themeModal').classList.remove('hidden');
+  if (e && th.strict && !e.checked) {
+    window.api.themesCheck(id).then((r) => {
+      e.compat = r.ok;
+      e.checked = true;
+      updateThemeModal();
+    }).catch(() => {});
+  }
+}
+
+function updateThemeModal() {
+  if (!th.open) return;
+  if (isBundledTheme(th.open)) {
+    const cur = th.open === th.current;
+    $('tmCompat').className = 'tm-compat hidden';
+    $('tmMain').textContent = cur ? 'Em uso agora' : 'Usar este tema';
+    $('tmMain').disabled = th.busy || cur;
+    $('tmDelete').classList.add('hidden');
+    return;
+  }
+  const e = th.byId[th.open];
+  const installed = th.installed.includes(th.open);
+  const cur = th.open === th.current;
+  const broken = Boolean(e && themeBroken(e));
+  const compat = $('tmCompat');
+  compat.className = 'tm-compat';
+  if (!e || !th.strict) compat.classList.add('hidden');
+  else if (!e.checked) compat.textContent = 'Conferindo se funciona no seu fliperama…';
+  else if (e.compat === true) { compat.textContent = '✓ Funciona no seu fliperama.'; compat.classList.add('ok'); }
+  else if (broken) {
+    compat.textContent = 'Esse tema foi feito para um RetroPie mais novo e não abre direito no seu fliperama.';
+    compat.classList.add('err');
+  } else compat.classList.add('hidden');
+  const main = $('tmMain');
+  main.textContent = cur ? 'Em uso agora' : installed ? 'Usar este tema' : broken ? 'Não funciona no seu fliperama' : 'Baixar para o fliperama';
+  main.disabled = th.busy || cur || (!installed && (!e || broken));
+  $('tmDelete').classList.toggle('hidden', !installed || cur);
+  $('tmDelete').disabled = th.busy;
+}
+
+$('tmClose').addEventListener('click', () => { if (!th.busy) { $('themeModal').classList.add('hidden'); th.open = null; } });
+
+$('tmMain').addEventListener('click', async () => {
+  const id = th.open;
+  if (isBundledTheme(id)) return useBundledTheme();
+  if (th.installed.includes(id)) return applyTheme(id);
+  th.busy = true;
+  updateThemeModal();
+  setStatus($('tmStatus'), 'Baixando no fliperama…');
+  statusBar.set(`Baixando o tema "${id}"…`, { indet: true, green: true });
+  try {
+    await window.api.themesInstall(settings, th.byId[id]);
+    th.installed = [...th.installed, id].sort((a, b) => a.localeCompare(b));
+    renderInstalled();
+    renderCatalog(true);
+    refreshThemeFree();
+    setStatus($('tmStatus'), 'Tema baixado! Clique em "Usar este tema" para ver no fliperama.', 'ok');
+    statusBar.set(`Tema "${id}" baixado ✅`, { percent: 100, kind: 'ok' });
+  } catch (err) {
+    setStatus($('tmStatus'), plainError(err), 'err');
+    statusBar.set('Falha ao baixar o tema', { kind: 'err' });
+  }
+  th.busy = false;
+  updateThemeModal();
+});
+
+window.api.onThemesProgress((p) => {
+  const label = p.phase === 'download' ? 'Baixando' : p.phase === 'upload' ? 'Enviando' : 'Preparando';
+  setStatus($('tmStatus'), `${label}… ${p.percent}%`);
+  statusBar.set(`${label} o tema ${p.percent}%`, { percent: p.percent, green: true });
+});
+
+$('tmDelete').addEventListener('click', async () => {
+  const id = th.open;
+  if (!confirm(`Apagar o tema "${id}" do fliperama? Dá para baixar de novo depois.`)) return;
+  th.busy = true;
+  updateThemeModal();
+  try {
+    await window.api.themesRemove(settings, id, th.current);
+    th.installed = th.installed.filter((n) => n !== id);
+    renderInstalled();
+    renderCatalog(true);
+    refreshThemeFree();
+    $('themeModal').classList.add('hidden');
+    th.open = null;
+    setStatus($('themeStatus'), `Tema "${id}" apagado do fliperama.`, 'ok');
+  } catch (err) {
+    setStatus($('tmStatus'), plainError(err), 'err');
+  }
+  th.busy = false;
+  updateThemeModal();
+});
+
+async function applyTheme(name) {
+  if (applyingTheme || name === th.current) return;
   applyingTheme = true;
-  setStatus($('themeStatus'), `Trocando para "${name}" e reiniciando o EmulationStation…`);
+  th.busy = true;
+  updateThemeModal();
+  setStatus($('tmStatus'), 'Trocando o tema e reiniciando a tela do fliperama…');
   statusBar.set(`Trocando tema para "${name}"…`, { indet: true });
   try {
     await window.api.piSetTheme(settings, name);
-    setStatus($('themeStatus'), `Tema "${name}" aplicado! O fliperama vai reabrir já com ele. ✅`, 'ok');
+    th.current = name;
+    renderInstalled();
+    renderCatalog(true);
+    setStatus($('tmStatus'), 'Pronto! O fliperama vai reabrir já com esse tema.', 'ok');
     statusBar.set(`Tema "${name}" aplicado ✅`, { percent: 100, kind: 'ok' });
-    renderThemes(
-      [...$('themeGrid').querySelectorAll('.tc-name')].map((e) => e.textContent),
-      name
-    );
   } catch (err) {
-    setStatus($('themeStatus'), 'Erro: ' + err.message, 'err');
+    setStatus($('tmStatus'), plainError(err), 'err');
     statusBar.set('Falha ao trocar o tema', { kind: 'err' });
   } finally {
     applyingTheme = false;
+    th.busy = false;
+    updateThemeModal();
   }
 }
 
 $('themeReload').addEventListener('click', loadThemes);
+$('catSearch').addEventListener('input', () => renderCatalog());
+for (const id of ['catSort', 'catOwner', 'catSource', 'catPrev', 'catWorks', 'catHidden']) {
+  $(id).addEventListener('change', () => renderCatalog());
+}
+$('catTone').addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip');
+  if (!chip) return;
+  th.tone = chip.dataset.tone;
+  $('catTone').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === chip));
+  updateThemeProgress();
+  renderCatalog();
+});
 
 // ---------------------------------------------------------------------------
 // Persistent bottom status bar
@@ -951,6 +1422,213 @@ $('sbarList').addEventListener('click', () => {
   if (!drawer.classList.contains('hidden') && lastQueueState) renderQueueDrawer(lastQueueState);
 });
 $('qdClose').addEventListener('click', () => $('queueDrawer').classList.add('hidden'));
+
+// ---------------------------------------------------------------------------
+// Novo fliperama: write RetroPie to an SD card, then find and set up the new Pi
+// ---------------------------------------------------------------------------
+const nf = { model: null, disk: null, disks: [], images: {}, wifi: null, busy: false };
+let setupLoaded = false;
+const WIFI_NOTE = {
+  yes: 'Wi-Fi de 2,4 e 5 GHz',
+  some: 'Pi 3B+ pega 5 GHz; Pi 3B e Zero 2 W só 2,4 GHz; Pi 2 só no cabo',
+  no: 'Zero W só 2,4 GHz; Pi 1 e Zero sem W só no cabo'
+};
+const SETUP_PHASE = {
+  download: 'Baixando o RetroPie', verify: 'Conferindo o download', prepare: 'Apagando o cartão',
+  write: 'Gravando o cartão', boot: 'Configurando Wi-Fi e acesso remoto'
+};
+
+// ipcRenderer.invoke wraps main-process errors as "Error invoking remote method '…': Error: …"
+function plainError(err) {
+  return String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '');
+}
+
+function nfUpdate() {
+  $('nfWrite').disabled = nf.busy || !nf.model || !nf.disk;
+  $('nfFind').disabled = nf.busy;
+  const warn = $('nfWifiWarn');
+  const show = nf.wifi && nf.wifi.is5GHz && nf.model && nf.model !== 'pi4' && $('nfSsid').value.trim() === nf.wifi.ssid;
+  warn.classList.toggle('hidden', !show);
+  if (show) {
+    warn.textContent = 'Este computador está no Wi-Fi de 5 GHz. A Pi 3 Model B e as Zero só enxergam 2,4 GHz: se o seu ' +
+      'roteador transmite as duas faixas com o mesmo nome, funciona; se for só 5 GHz, ligue o fliperama no cabo.';
+  }
+}
+
+function nfPick(grid, card) {
+  grid.querySelectorAll('.theme-card').forEach((c) => c.classList.toggle('current', c === card));
+}
+
+function nfCard(title, sub) {
+  const b = document.createElement('button');
+  b.className = 'theme-card';
+  const t = document.createElement('span'); t.className = 'tc-name'; t.textContent = title;
+  const s = document.createElement('span'); s.className = 'tc-sub'; s.textContent = sub;
+  b.append(t, s);
+  return b;
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600);
+  if (h >= 48) return `${Math.floor(h / 24)} dias`;
+  if (h >= 1) return `${h} hora${h > 1 ? 's' : ''}`;
+  return `${Math.max(1, Math.floor(sec / 60))} min`;
+}
+
+// The connected arcade already runs RetroPie: show what it has and how it is doing.
+function renderReady(i) {
+  const net = i.ssid
+    ? `Wi-Fi "${i.ssid}"${i.band ? ` (${i.band})` : ''} · ${i.wlanIp}${i.ethIp ? ` · cabo ${i.ethIp}` : ''}`
+    : (i.ethIp ? `Cabo · ${i.ethIp}` : '—');
+  const rows = [
+    ['Modelo', i.model],
+    ['Sistema', `RetroPie ${i.retropie || '?'} · ${i.os}`],
+    ['Rede', net],
+    ['Jogos', `${i.games} jogos em ${i.systems} videogames`],
+    ['Espaço livre', `${fmtBytes(i.diskFree)} de ${fmtBytes(i.diskTotal)}`, i.diskFree < 1e9 ? 'warn' : ''],
+    ['Temperatura', i.tempC === null ? '—' : `${i.tempC} °C`, i.tempC >= 80 ? 'bad' : i.tempC >= 70 ? 'warn' : ''],
+    ['Ligado há', fmtUptime(i.uptimeSec)],
+    ['Tema', i.theme || 'padrão']
+  ];
+  const dl = $('nfInfo');
+  dl.innerHTML = '';
+  for (const [k, v, cls] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v; if (cls) dd.className = cls;
+    dl.append(dt, dd);
+  }
+  const notes = [];
+  if (i.diskFree < 1e9) notes.push(`Pouco espaço: sobram ${fmtBytes(i.diskFree)}. Apague jogos que não usa em "Meus jogos".`);
+  if (i.tempC >= 70) notes.push(`Está quente (${i.tempC} °C). A Raspberry começa a perder desempenho perto de 80 °C; um dissipador ou uma ventoinha resolve.`);
+  if (i.outdated) notes.push(`Existe um RetroPie mais novo (${i.latest}; o seu é ${i.retropie}). "Reinstalar do zero" atualiza, mas apaga tudo do cartão: jogos, capas e configurações.`);
+  const ul = $('nfNotes');
+  ul.innerHTML = '';
+  for (const n of notes) { const li = document.createElement('li'); li.textContent = n; ul.appendChild(li); }
+  $('nfReadySub').textContent = `Conectado em ${settings.host}. Não precisa instalar nada: é só mandar jogos.`;
+  $('nfReady').classList.remove('hidden');
+}
+
+$('nfReinstall').addEventListener('click', () => {
+  $('nfWizard').classList.remove('hidden');
+  $('nfWizard').scrollIntoView({ behavior: 'smooth' });
+});
+
+async function loadSetup() {
+  setupLoaded = true;
+  // Already set up? Show it and leave the wizard behind "Reinstalar do zero".
+  if (settings && settings.host) {
+    setStatus($('nfCheck'), 'Verificando o fliperama conectado…');
+    try {
+      renderReady(await window.api.setupPiInfo(settings));
+      setStatus($('nfCheck'), '');
+    } catch {
+      setStatus($('nfCheck'), `Não consegui falar com o fliperama em ${settings.host}. Se ele estiver ligado, confira a conexão; para preparar um do zero, siga os passos abaixo.`);
+      $('nfWizard').classList.remove('hidden');
+    }
+  } else {
+    $('nfWizard').classList.remove('hidden');
+  }
+  nf.images = await window.api.setupImages();
+  const grid = $('nfModels');
+  grid.innerHTML = '';
+  for (const [key, img] of Object.entries(nf.images)) {
+    const card = nfCard(img.label, WIFI_NOTE[img.wifi5]);
+    card.addEventListener('click', () => { nf.model = key; nfPick(grid, card); nfUpdate(); });
+    grid.appendChild(card);
+  }
+  try {
+    nf.wifi = await window.api.setupWifi(false);
+    $('nfSsid').value = nf.wifi.ssid || '';
+  } catch { /* no Wi-Fi adapter: the fields stay empty */ }
+  nfUpdate();
+  refreshDisks();
+}
+
+async function refreshDisks() {
+  setStatus($('nfDiskStatus'), 'Procurando cartões…');
+  try {
+    nf.disks = await window.api.setupDisks();
+  } catch (err) {
+    nf.disks = [];
+    setStatus($('nfDiskStatus'), plainError(err), 'err');
+  }
+  if (nf.disk && !nf.disks.some((d) => d.number === nf.disk.number && d.size === nf.disk.size)) nf.disk = null;
+  const grid = $('nfDisks');
+  grid.innerHTML = '';
+  for (const d of nf.disks) {
+    const card = nfCard(d.name, `${fmtBytes(d.size)}${d.letters ? ' · unidade ' + d.letters.split(',').join(':, ') + ':' : ''}`);
+    if (nf.disk && nf.disk.number === d.number) card.classList.add('current');
+    card.addEventListener('click', () => { nf.disk = d; nfPick(grid, card); nfUpdate(); });
+    grid.appendChild(card);
+  }
+  if (!nf.disks.length) {
+    setStatus($('nfDiskStatus'), 'Nenhum cartão encontrado. Coloque o cartão no computador (leitor de cartão ou adaptador USB) e clique em Atualizar lista.');
+  } else {
+    setStatus($('nfDiskStatus'), nf.disk ? '' : 'Clique no cartão que vai virar o fliperama.');
+  }
+  nfUpdate();
+}
+
+$('nfDiskReload').addEventListener('click', refreshDisks);
+$('nfSsid').addEventListener('input', nfUpdate);
+
+$('nfKey').addEventListener('click', async () => {
+  try {
+    const w = await window.api.setupWifi(true);
+    if (!w.key) return setStatus($('nfKeyStatus'), 'Não achei uma senha salva para essa rede. Digite a senha.', 'err');
+    $('nfSsid').value = w.ssid;
+    $('nfPass').value = w.key;
+    setStatus($('nfKeyStatus'), 'Senha preenchida.', 'ok');
+    nfUpdate();
+  } catch (err) {
+    setStatus($('nfKeyStatus'), plainError(err), 'err');
+  }
+});
+
+$('nfWrite').addEventListener('click', async () => {
+  const d = nf.disk;
+  if (!confirm(`Tudo o que estiver em "${d.name}" (${fmtBytes(d.size)}) será APAGADO e o RetroPie será gravado no lugar.\n\nContinuar?`)) return;
+  nf.busy = true;
+  nfUpdate();
+  const ssid = $('nfSsid').value.trim();
+  const wifi = ssid ? { ssid, password: $('nfPass').value, country: 'BR' } : null;
+  setStatus($('nfWriteStatus'), 'Começando…');
+  try {
+    await window.api.setupWrite({ model: nf.model, disk: d, wifi });
+    setStatus($('nfWriteStatus'), 'Cartão pronto! Tire o cartão do computador e siga o passo 5.', 'ok');
+    statusBar.set('Cartão pronto ✅', { percent: 100, kind: 'ok' });
+  } catch (err) {
+    setStatus($('nfWriteStatus'), plainError(err), 'err');
+    statusBar.set('Falha ao gravar o cartão', { kind: 'err' });
+  }
+  nf.busy = false;
+  nfUpdate();
+});
+
+window.api.onSetupProgress((p) => {
+  const label = SETUP_PHASE[p.phase] || p.msg || 'Trabalhando';
+  const pct = p.total ? Math.min(100, Math.round((p.done / p.total) * 100)) : null;
+  setStatus($('nfWriteStatus'), pct === null ? `${label}…` : `${label}… ${pct}%`);
+  statusBar.set(pct === null ? `${label}…` : `${label} ${pct}%`, pct === null ? { indet: true, green: true } : { percent: pct, green: true });
+});
+
+$('nfFind').addEventListener('click', async () => {
+  nf.busy = true;
+  nfUpdate();
+  try {
+    settings = await window.api.setupFind();
+    fillSettingsForm(settings);
+    setConnState(true, `pi@${settings.host}`);
+    setStatus($('nfFindStatus'), `Pronto! O fliperama está em ${settings.host} e ficou salvo aqui. Ele está reiniciando para usar o nome novo; em 1 minuto já dá para mandar jogos.`, 'ok');
+    libraryLoaded = false;
+    themesLoaded = false;
+  } catch (err) {
+    setStatus($('nfFindStatus'), plainError(err), 'err');
+  }
+  nf.busy = false;
+  nfUpdate();
+});
+window.api.onSetupStatus(({ msg }) => setStatus($('nfFindStatus'), msg));
 
 // ---------------------------------------------------------------------------
 // Init

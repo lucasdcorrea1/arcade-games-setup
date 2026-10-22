@@ -34,6 +34,16 @@ contextBridge.exposeInMainWorld('api', {
   // EmulationStation themes.
   piThemes: (settings) => ipcRenderer.invoke('pi:themes', settings),
   piSetTheme: (settings, name) => ipcRenderer.invoke('pi:setTheme', { settings, name }),
+  themesCatalog: () => ipcRenderer.invoke('themes:catalog'),
+  themesThumb: (url, opts = {}) => ipcRenderer.invoke('themes:thumb', { url, ...opts }),
+  themesCheck: (id) => ipcRenderer.invoke('themes:check', id),
+  themesCheckAll: (ids) => ipcRenderer.invoke('themes:checkAll', ids),
+  onThemesCompat: (cb) => ipcRenderer.on('themes:compat', (_e, d) => cb(d)),
+  themesInstall: (settings, entry) => ipcRenderer.invoke('themes:install', { settings, entry }),
+  themesRemove: (settings, name, current) => ipcRenderer.invoke('themes:remove', { settings, name, current }),
+  themesBundled: () => ipcRenderer.invoke('themes:bundled'),
+  themesUseBundled: (settings) => ipcRenderer.invoke('themes:useBundled', settings),
+  onThemesProgress: (cb) => ipcRenderer.on('themes:progress', (_e, d) => cb(d)),
 
   pickFile: () => ipcRenderer.invoke('dialog:pickFile'),
   pickImage: () => ipcRenderer.invoke('dialog:pickImage'),
@@ -60,5 +70,15 @@ contextBridge.exposeInMainWorld('api', {
   onDownloadFailed: (cb) => ipcRenderer.on('download:failed', (_e, d) => cb(d)),
 
   // Upload progress.
-  onUploadProgress: (cb) => ipcRenderer.on('upload:progress', (_e, d) => cb(d))
+  onUploadProgress: (cb) => ipcRenderer.on('upload:progress', (_e, d) => cb(d)),
+
+  // "Novo fliperama": prepare an SD card and set up a brand-new Raspberry Pi.
+  setupPiInfo: (settings) => ipcRenderer.invoke('setup:piInfo', settings),
+  setupImages: () => ipcRenderer.invoke('setup:images'),
+  setupDisks: () => ipcRenderer.invoke('setup:disks'),
+  setupWifi: (withKey) => ipcRenderer.invoke('setup:wifi', withKey),
+  setupWrite: (args) => ipcRenderer.invoke('setup:write', args),
+  setupFind: () => ipcRenderer.invoke('setup:find'),
+  onSetupProgress: (cb) => ipcRenderer.on('setup:progress', (_e, d) => cb(d)),
+  onSetupStatus: (cb) => ipcRenderer.on('setup:status', (_e, d) => cb(d))
 });

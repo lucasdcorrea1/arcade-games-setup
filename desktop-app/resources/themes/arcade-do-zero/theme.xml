@@ -1,0 +1,18 @@
+<theme>
+  <formatVersion>4</formatVersion>
+  <include>./_inc/layout.xml</include>
+  <view name="system, basic, detailed, video">
+    <image name="title" extra="true"><path>./_inc/clear.png</path></image>
+    <text name="titleText" extra="true">
+      <origin>0.5 0</origin>
+      <pos>0.4801 0.0556</pos>
+      <size>0.4688 0.125</size>
+      <text>${system.fullName}</text>
+      <fontPath>./fonts/Outfit-800.ttf</fontPath>
+      <fontSize>0.0639</fontSize>
+      <color>FFFFFFFF</color>
+      <alignment>center</alignment>
+      <zIndex>30</zIndex>
+    </text>
+  </view>
+</theme>

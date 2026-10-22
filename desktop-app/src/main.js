@@ -11,6 +11,9 @@ const SftpClient = require('ssh2-sftp-client');
 const { Client: SshClient } = require('ssh2');
 const { XMLParser, XMLBuilder } = require('fast-xml-parser');
 const { SYSTEMS, systemFromUrl } = require('./systems');
+const setup = require('./setup');
+const themes = require('./themes');
+const bundledTheme = require('./bundled-theme');
 
 const APP_ID = 'com.lucascorrea.retropieromsender';
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -170,6 +173,16 @@ async function verifyRetroPie(settings) {
   }
 }
 
+// A Pi on cable AND Wi-Fi answers on both addresses; keep the Wi-Fi one so unplugging the
+// cable doesn't cut the app off.
+async function preferWifiAddress(settings, host) {
+  try {
+    const wlan = (await sshExec({ ...settings, host }, "ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1")).trim();
+    if (wlan && wlan !== host && (await checkPort(wlan, 22, 1500))) return wlan;
+  } catch { /* keep the address that worked */ }
+  return host;
+}
+
 async function discoverRetroPie(settings) {
   const status = (msg) => sendToRenderer('discover:status', { msg });
   const tried = new Set();
@@ -177,7 +190,7 @@ async function discoverRetroPie(settings) {
     if (!host || tried.has(host)) return null;
     tried.add(host);
     status(`Testando ${host}…`);
-    return (await verifyRetroPie({ ...settings, host })) ? host : null;
+    return (await verifyRetroPie({ ...settings, host })) ? preferWifiAddress(settings, host) : null;
   };
 
   // 1) Fast path: the default RetroPie mDNS hostname.
@@ -584,13 +597,18 @@ function esSettingsPath(settings) {
   return `${esHomeDir(settings)}/.emulationstation/es_settings.cfg`;
 }
 
-// List installed themes + the currently selected one.
+// List installed themes + the currently selected one + the EmulationStation version (from its log),
+// which decides which themes can load.
 async function piThemes(settings) {
   const out = await sshExec(
     settings,
-    'ls -1 /etc/emulationstation/themes 2>/dev/null; ls -1 ~/.emulationstation/themes 2>/dev/null'
+    'ls -1 /etc/emulationstation/themes 2>/dev/null; ls -1 ~/.emulationstation/themes 2>/dev/null; ' +
+    'echo "@@ES $(head -c 200 ~/.emulationstation/es_log.txt 2>/dev/null | tr -d \'\\n\')"'
   );
-  const themes = [...new Set(out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))]
+  const lines = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const esLine = lines.find((s) => s.startsWith('@@ES')) || '';
+  const esVersion = (/v(\d+\.\d+\.\d+)/.exec(esLine) || [])[1] || '';
+  const themes = [...new Set(lines.filter((s) => !s.startsWith('@@ES')))]
     .filter((n) => !n.startsWith('.'))
     .sort((a, b) => a.localeCompare(b));
 
@@ -607,7 +625,7 @@ async function piThemes(settings) {
   } catch { /* no config yet */ }
   finally { try { await sftp.end(); } catch { /* ignore */ } }
 
-  return { themes, current };
+  return { themes, current, esVersion };
 }
 
 // Switch the active theme by rewriting the ThemeSet entry, then restart ES.
@@ -1210,6 +1228,21 @@ function registerIpc() {
   // EmulationStation themes.
   ipcMain.handle('pi:themes', (_e, settings) => piThemes(settings));
   ipcMain.handle('pi:setTheme', (_e, { settings, name }) => piSetTheme(settings, name));
+  ipcMain.handle('themes:catalog', () => themes.catalog(app.getPath('userData')));
+  ipcMain.handle('themes:thumb', (_e, { url, width, background }) => themes.thumb(app.getPath('userData'), url, { width, background }));
+  ipcMain.handle('themes:check', (_e, id) => themes.check(app.getPath('userData'), id));
+  ipcMain.handle('themes:checkAll', (_e, ids) =>
+    themes.checkAll(app.getPath('userData'), ids || [], (r) => sendToRenderer('themes:compat', r)));
+  ipcMain.handle('themes:install', (_e, { settings, entry }) =>
+    themes.install(connectConfig(settings), entry, (p) => sendToRenderer('themes:progress', p)));
+  ipcMain.handle('themes:remove', (_e, { settings, name, current }) => themes.remove(connectConfig(settings), name, current));
+  // The app's own theme: always offered, copied to the Pi on use when missing or outdated.
+  ipcMain.handle('themes:bundled', () => bundledTheme.info());
+  ipcMain.handle('themes:useBundled', async (_e, settings) => {
+    const r = await bundledTheme.sync(connectConfig(settings), esHomeDir(settings), (p) => sendToRenderer('themes:progress', p));
+    await piSetTheme(settings, bundledTheme.ID);
+    return r;
+  });
 
   ipcMain.handle('dialog:pickFile', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
@@ -1247,6 +1280,23 @@ function registerIpc() {
   ipcMain.handle('library:scan', (_e, settings) => scanLibrary(settings));
   ipcMain.handle('sftp:deleteGame', (_e, { settings, job }) => sftpDeleteGame(settings, job));
   ipcMain.handle('ssh:restartES', (_e, settings) => restartEmulationStation(settings));
+
+  // "Novo fliperama": write RetroPie to an SD card, then find and configure the new Pi.
+  ipcMain.handle('setup:piInfo', (_e, settings) => setup.piInfo(sshExec, settings));
+  ipcMain.handle('setup:images', () => setup.IMAGES);
+  ipcMain.handle('setup:disks', () => setup.listDisks());
+  ipcMain.handle('setup:wifi', (_e, withKey) => setup.pcWifi(!!withKey));
+  ipcMain.handle('setup:write', async (_e, { model, disk, wifi }) => {
+    const progress = (p) => sendToRenderer('setup:progress', p);
+    const cacheDir = path.join(libraryRoot(loadSettings()), '_retropie-imagens');
+    const { file, imageBytes } = await setup.ensureImage(model, cacheDir, progress);
+    return setup.writeCard({ disk, imageFile: file, imageBytes, wifi }, progress);
+  });
+  ipcMain.handle('setup:find', async () => {
+    const found = await setup.findAndConfigure({ scanForSsh, localSubnets, sshExec, verifyRetroPie },
+      (msg) => sendToRenderer('setup:status', { msg }));
+    return saveSettings({ ...loadSettings(), host: found.host, user: found.user, password: found.password });
+  });
 
   // Custom (frameless) window controls.
   ipcMain.on('win:min', () => mainWindow && mainWindow.minimize());
