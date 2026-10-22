@@ -26,7 +26,10 @@ const ICONS = {
   trash: '<path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/>',
   pencil: '<path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16z"/>',
   star: '<path d="M12 3.5 14.6 9l6 .5-4.5 3.9 1.4 5.8L12 16.9 6.5 19.2l1.4-5.8L3.4 9.5 9.4 9z"/>',
-  sd: '<path d="M8 3h8.5L19 5.5V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6z"/><path d="M9 7v3M12 7v3M15 7v3"/>'
+  sd: '<path d="M8 3h8.5L19 5.5V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6z"/><path d="M9 7v3M12 7v3M15 7v3"/>',
+  board: '<rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M2 9h2M2 15h2M20 9h2M20 15h2M9 2v3M15 2v3M9 19v3M15 19v3"/>',
+  wifi: '<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 16a5 5 0 0 1 6.6 0"/><path d="M12 19.5h0"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>'
 };
 function svgIcon(name, extraClass) {
   const body = ICONS[name] || '';
@@ -1426,7 +1429,7 @@ $('qdClose').addEventListener('click', () => $('queueDrawer').classList.add('hid
 // ---------------------------------------------------------------------------
 // Novo fliperama: write RetroPie to an SD card, then find and set up the new Pi
 // ---------------------------------------------------------------------------
-const nf = { model: null, disk: null, disks: [], images: {}, wifi: null, busy: false };
+const nf = { model: null, disk: null, disks: [], images: {}, wifi: null, busy: false, step: 1, seen: 1, written: false };
 let setupLoaded = false;
 const WIFI_NOTE = {
   yes: 'Wi-Fi de 2,4 e 5 GHz',
@@ -1446,6 +1449,7 @@ function plainError(err) {
 function nfUpdate() {
   $('nfWrite').disabled = nf.busy || !nf.model || !nf.disk;
   $('nfFind').disabled = nf.busy;
+  nfNav();
   const warn = $('nfWifiWarn');
   const show = nf.wifi && nf.wifi.is5GHz && nf.model && nf.model !== 'pi4' && $('nfSsid').value.trim() === nf.wifi.ssid;
   warn.classList.toggle('hidden', !show);
@@ -1456,17 +1460,90 @@ function nfUpdate() {
 }
 
 function nfPick(grid, card) {
-  grid.querySelectorAll('.theme-card').forEach((c) => c.classList.toggle('current', c === card));
+  grid.querySelectorAll('.nf-opt').forEach((c) => c.classList.toggle('current', c === card));
 }
 
-function nfCard(title, sub) {
+function nfCard(title, sub, icon) {
   const b = document.createElement('button');
-  b.className = 'theme-card';
-  const t = document.createElement('span'); t.className = 'tc-name'; t.textContent = title;
-  const s = document.createElement('span'); s.className = 'tc-sub'; s.textContent = sub;
-  b.append(t, s);
+  b.className = 'nf-opt';
+  b.innerHTML = `<span class="nf-ico">${svgIcon(icon)}</span><span><b></b><small></small></span><span class="nf-check">${svgIcon('check')}</span>`;
+  b.querySelector('b').textContent = title;
+  b.querySelector('small').textContent = sub;
   return b;
 }
+
+// --- wizard: one step at a time ------------------------------------------------
+// A step can be left forward only when it is complete; finished steps stay clickable in the rail.
+function nfStepDone(step) {
+  if (step === 1) return Boolean(nf.model);
+  if (step === 2) return true; // Wi-Fi is optional (cable only)
+  if (step === 3) return Boolean(nf.disk);
+  if (step === 4) return nf.written;
+  return false;
+}
+
+function nfNav() {
+  const s = nf.step;
+  document.querySelectorAll('#nfWizard .nf-page').forEach((p) => p.classList.toggle('active', Number(p.dataset.step) === s));
+  document.querySelectorAll('#nfRail li').forEach((li) => {
+    const n = Number(li.dataset.step);
+    li.classList.toggle('current', n === s);
+    li.classList.toggle('done', n !== s && n <= nf.seen && nfStepDone(n));
+  });
+  const ssid = $('nfSsid').value.trim();
+  $('nfSum1').textContent = nf.model ? nf.images[nf.model].label : 'Escolha o modelo';
+  $('nfSum2').textContent = ssid ? `"${ssid}"` : 'Só no cabo';
+  $('nfSum3').textContent = nf.disk ? `${nf.disk.name} · ${fmtBytes(nf.disk.size)}` : 'Onde gravar';
+  $('nfSum4').textContent = nf.written ? 'Cartão pronto' : 'Uns 10 minutos';
+  $('nfBack').style.visibility = s > 1 && !nf.busy ? 'visible' : 'hidden';
+  $('nfNext').style.visibility = s < 5 ? 'visible' : 'hidden';
+  $('nfNext').disabled = nf.busy || !nfStepDone(s);
+  if (s === 4) nfReview();
+}
+
+// every step before n is complete, so n can be visited
+function nfReachable(n) {
+  for (let i = 1; i < n; i++) if (!nfStepDone(i)) return false;
+  return true;
+}
+
+function nfGo(step) {
+  if (nf.busy || step < 1 || step > 5 || !nfReachable(step)) return;
+  nf.step = step;
+  nf.seen = Math.max(nf.seen, step);
+  nfNav();
+}
+
+function nfReview() {
+  const ssid = $('nfSsid').value.trim();
+  const rows = [
+    ['Raspberry', nf.model ? nf.images[nf.model].label : '—'],
+    ['Wi-Fi', ssid ? `"${ssid}"${$('nfPass').value ? ' · com senha' : ' · sem senha'}` : 'Só no cabo'],
+    ['Cartão', nf.disk ? `${nf.disk.name} · ${fmtBytes(nf.disk.size)}` : '—']
+  ];
+  const dl = $('nfReview');
+  dl.innerHTML = '';
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    dl.append(dt, dd);
+  }
+}
+
+$('nfNext').addEventListener('click', () => nfGo(nf.step + 1));
+$('nfBack').addEventListener('click', () => nfGo(nf.step - 1));
+$('nfRail').addEventListener('click', (e) => {
+  const li = e.target.closest('li');
+  if (li && (li.classList.contains('done') || li.classList.contains('current'))) nfGo(Number(li.dataset.step));
+});
+$('nfWizClose').addEventListener('click', () => {
+  $('nfWizard').classList.add('hidden');
+  $('nfReady').classList.remove('hidden');
+});
+document.querySelectorAll('#nfReady [data-go]').forEach((b) => b.addEventListener('click', () => {
+  const tab = document.querySelector(`.tab[data-tab="${b.dataset.go}"]`);
+  if (tab) tab.click();
+}));
 
 function fmtUptime(sec) {
   const h = Math.floor(sec / 3600);
@@ -1480,21 +1557,38 @@ function renderReady(i) {
   const net = i.ssid
     ? `Wi-Fi "${i.ssid}"${i.band ? ` (${i.band})` : ''} · ${i.wlanIp}${i.ethIp ? ` · cabo ${i.ethIp}` : ''}`
     : (i.ethIp ? `Cabo · ${i.ethIp}` : '—');
+  $('nfGamesN').textContent = String(i.games);
+  $('nfGamesSub').textContent = `jogo${i.games === 1 ? '' : 's'} em ${i.systems} videogame${i.systems === 1 ? '' : 's'}`;
+
+  const meter = (bar, pct, kind) => {
+    $(bar).className = 'nf-bar' + (kind ? ' ' + kind : '');
+    $(bar).firstElementChild.style.width = `${Math.max(2, Math.min(100, pct))}%`;
+  };
+  const used = i.diskTotal ? (1 - i.diskFree / i.diskTotal) * 100 : 0;
+  $('nfDiskTxt').textContent = `${fmtBytes(i.diskFree)} livres de ${fmtBytes(i.diskTotal)}`;
+  meter('nfDiskBar', used, i.diskFree < 3e8 ? 'bad' : i.diskFree < 1e9 ? 'warn' : '');
+  if (i.tempC === null) {
+    $('nfTempTxt').textContent = '—';
+    meter('nfTempBar', 0, '');
+  } else {
+    const hot = i.tempC >= 80 ? 'bad' : i.tempC >= 70 ? 'warn' : 'ok';
+    $('nfTempTxt').textContent = `${i.tempC} °C · ${{ ok: 'normal', warn: 'quente', bad: 'muito quente' }[hot]}`;
+    meter('nfTempBar', ((i.tempC - 30) / (85 - 30)) * 100, hot);
+  }
+  $('nfUpTxt').textContent = fmtUptime(i.uptimeSec);
+
   const rows = [
-    ['Modelo', i.model],
-    ['Sistema', `RetroPie ${i.retropie || '?'} · ${i.os}`],
+    ['Sistema', `RetroPie ${i.retropie || '?'}`, i.outdated ? `${i.latest} disponível` : ''],
+    ['Base', i.os],
     ['Rede', net],
-    ['Jogos', `${i.games} jogos em ${i.systems} videogames`],
-    ['Espaço livre', `${fmtBytes(i.diskFree)} de ${fmtBytes(i.diskTotal)}`, i.diskFree < 1e9 ? 'warn' : ''],
-    ['Temperatura', i.tempC === null ? '—' : `${i.tempC} °C`, i.tempC >= 80 ? 'bad' : i.tempC >= 70 ? 'warn' : ''],
-    ['Ligado há', fmtUptime(i.uptimeSec)],
     ['Tema', i.theme || 'padrão']
   ];
   const dl = $('nfInfo');
   dl.innerHTML = '';
-  for (const [k, v, cls] of rows) {
+  for (const [k, v, tag] of rows) {
     const dt = document.createElement('dt'); dt.textContent = k;
-    const dd = document.createElement('dd'); dd.textContent = v; if (cls) dd.className = cls;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    if (tag) { const t = document.createElement('span'); t.className = 'nf-tag'; t.textContent = tag; dd.appendChild(t); }
     dl.append(dt, dd);
   }
   const notes = [];
@@ -1504,13 +1598,15 @@ function renderReady(i) {
   const ul = $('nfNotes');
   ul.innerHTML = '';
   for (const n of notes) { const li = document.createElement('li'); li.textContent = n; ul.appendChild(li); }
-  $('nfReadySub').textContent = `Conectado em ${settings.host}. Não precisa instalar nada: é só mandar jogos.`;
+  $('nfReadySub').textContent = `${i.model} · conectado em ${settings.host}. Não precisa instalar nada: é só mandar jogos.`;
   $('nfReady').classList.remove('hidden');
 }
 
 $('nfReinstall').addEventListener('click', () => {
+  $('nfReady').classList.add('hidden');
+  $('nfWizClose').classList.remove('hidden');
   $('nfWizard').classList.remove('hidden');
-  $('nfWizard').scrollIntoView({ behavior: 'smooth' });
+  nfGo(1);
 });
 
 async function loadSetup() {
@@ -1532,8 +1628,8 @@ async function loadSetup() {
   const grid = $('nfModels');
   grid.innerHTML = '';
   for (const [key, img] of Object.entries(nf.images)) {
-    const card = nfCard(img.label, WIFI_NOTE[img.wifi5]);
-    card.addEventListener('click', () => { nf.model = key; nfPick(grid, card); nfUpdate(); });
+    const card = nfCard(img.label, WIFI_NOTE[img.wifi5], 'board');
+    card.addEventListener('click', () => { nf.model = key; nf.written = false; nfPick(grid, card); nfUpdate(); });
     grid.appendChild(card);
   }
   try {
@@ -1556,9 +1652,9 @@ async function refreshDisks() {
   const grid = $('nfDisks');
   grid.innerHTML = '';
   for (const d of nf.disks) {
-    const card = nfCard(d.name, `${fmtBytes(d.size)}${d.letters ? ' · unidade ' + d.letters.split(',').join(':, ') + ':' : ''}`);
+    const card = nfCard(d.name, `${fmtBytes(d.size)}${d.letters ? ' · unidade ' + d.letters.split(',').join(':, ') + ':' : ''}`, 'sd');
     if (nf.disk && nf.disk.number === d.number) card.classList.add('current');
-    card.addEventListener('click', () => { nf.disk = d; nfPick(grid, card); nfUpdate(); });
+    card.addEventListener('click', () => { nf.disk = d; nf.written = false; nfPick(grid, card); nfUpdate(); });
     grid.appendChild(card);
   }
   if (!nf.disks.length) {
@@ -1592,10 +1688,15 @@ $('nfWrite').addEventListener('click', async () => {
   nfUpdate();
   const ssid = $('nfSsid').value.trim();
   const wifi = ssid ? { ssid, password: $('nfPass').value, country: 'BR' } : null;
-  setStatus($('nfWriteStatus'), 'Começando…');
+  setStatus($('nfWriteStatus'), '');
+  $('nfProgress').classList.remove('hidden');
   try {
     await window.api.setupWrite({ model: nf.model, disk: d, wifi });
-    setStatus($('nfWriteStatus'), 'Cartão pronto! Tire o cartão do computador e siga o passo 5.', 'ok');
+    nf.written = true;
+    $('nfPhase').textContent = 'Cartão pronto';
+    $('nfPct').textContent = '100%';
+    $('nfBar').style.width = '100%';
+    setStatus($('nfWriteStatus'), 'Pronto! Clique em Continuar.', 'ok');
     statusBar.set('Cartão pronto ✅', { percent: 100, kind: 'ok' });
   } catch (err) {
     setStatus($('nfWriteStatus'), plainError(err), 'err');
@@ -1608,7 +1709,10 @@ $('nfWrite').addEventListener('click', async () => {
 window.api.onSetupProgress((p) => {
   const label = SETUP_PHASE[p.phase] || p.msg || 'Trabalhando';
   const pct = p.total ? Math.min(100, Math.round((p.done / p.total) * 100)) : null;
-  setStatus($('nfWriteStatus'), pct === null ? `${label}…` : `${label}… ${pct}%`);
+  $('nfPhase').textContent = label;
+  $('nfPct').textContent = pct === null ? '' : `${pct}%`;
+  $('nfBar').style.width = `${pct === null ? 100 : pct}%`;
+  $('nfBar').parentElement.classList.toggle('indet', pct === null);
   statusBar.set(pct === null ? `${label}…` : `${label} ${pct}%`, pct === null ? { indet: true, green: true } : { percent: pct, green: true });
 });
 

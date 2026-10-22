@@ -163,89 +163,139 @@
 
   <!-- NOVO FLIPERAMA -->
   <section class="panel" data-panel="novo">
-    <div class="lib-head"><h2>Novo fliperama</h2></div>
     <p id="nfCheck" class="status"></p>
 
     <!-- an arcade that already works: show it, keep reinstalling one click away -->
     <div id="nfReady" class="nf-ready hidden">
-      <div class="nf-ready-head">
-        <span class="nf-ok"><span class="ico" data-icon="check"></span></span>
-        <div>
-          <h3>Seu fliperama já está pronto</h3>
-          <p id="nfReadySub" class="hint"></p>
+      <div class="nf-hero">
+        <div class="nf-hero-text">
+          <span class="nf-live"><i></i>Ligado e conectado</span>
+          <h3>Seu fliperama está pronto</h3>
+          <p id="nfReadySub"></p>
+          <div class="nf-games"><b id="nfGamesN"></b><span id="nfGamesSub"></span></div>
+          <div class="nf-actions">
+            <button class="primary" data-go="meus"><span class="ico" data-icon="library"></span> Ver meus jogos</button>
+            <button data-go="baixar"><span class="ico" data-icon="gamepad"></span> Baixar jogos</button>
+            <button data-go="temas"><span class="ico" data-icon="star"></span> Trocar o visual</button>
+          </div>
         </div>
+        <img class="nf-cab" src="assets/cabinet.jpg" alt="" />
       </div>
-      <dl id="nfInfo" class="nf-info"></dl>
+
+      <div class="nf-panels">
+        <section class="nf-panel">
+          <h4>Saúde</h4>
+          <div class="nf-meter">
+            <div class="nf-meter-top"><b>Espaço no cartão</b><span id="nfDiskTxt"></span></div>
+            <div id="nfDiskBar" class="nf-bar"><i></i></div>
+          </div>
+          <div class="nf-meter">
+            <div class="nf-meter-top"><b>Temperatura</b><span id="nfTempTxt"></span></div>
+            <div id="nfTempBar" class="nf-bar"><i></i></div>
+          </div>
+          <div class="nf-meter">
+            <div class="nf-meter-top"><b>Ligado há</b><span id="nfUpTxt"></span></div>
+          </div>
+        </section>
+        <section class="nf-panel">
+          <h4>Sistema</h4>
+          <dl id="nfInfo" class="nf-rows"></dl>
+        </section>
+      </div>
       <ul id="nfNotes" class="nf-notes"></ul>
-      <div class="row nf-row">
-        <button id="nfReinstall"><span class="ico" data-icon="sd"></span> Reinstalar do zero</button>
-        <span class="status">Apaga tudo do cartão e instala o RetroPie mais novo.</span>
+
+      <div class="nf-danger">
+        <div><b>Reinstalar do zero</b><span>Apaga tudo do cartão (jogos, capas e configurações) e instala o RetroPie mais novo.</span></div>
+        <button id="nfReinstall"><span class="ico" data-icon="sd"></span> Reinstalar…</button>
       </div>
     </div>
 
-    <div id="nfWizard" class="hidden">
-    <p class="hint">Transforme um cartão de memória vazio num fliperama pronto. O app baixa o RetroPie, grava o
-      cartão e já deixa o Wi-Fi configurado. Depois é só colocar o cartão na Raspberry e ligar.</p>
-    <ol class="nf-steps">
-      <li class="nf-step">
-        <span class="nf-n">1</span>
+    <!-- one step at a time: the rail on the left, the current step on the right -->
+    <div id="nfWizard" class="nf-wizard hidden">
+      <div class="nf-intro">
         <div>
-          <h3>Qual é a sua Raspberry?</h3>
-          <p class="hint">O modelo vem escrito na placa (ex.: "Raspberry Pi 3 Model B").</p>
-          <div id="nfModels" class="theme-grid nf-grid"></div>
+          <h3>Prepare um fliperama do zero</h3>
+          <p>Coloque um cartão de memória no computador. O app baixa o RetroPie, grava o cartão e já deixa o Wi-Fi
+            pronto. Depois é só colocar o cartão na Raspberry e ligar.</p>
         </div>
-      </li>
-      <li class="nf-step">
-        <span class="nf-n">2</span>
-        <div>
-          <h3>Wi-Fi do fliperama</h3>
-          <p class="hint">Já vem preenchido com a rede deste computador. Deixe em branco para usar só o cabo.</p>
-          <div class="row">
-            <div class="field grow"><label>Rede (nome do Wi-Fi)</label><input id="nfSsid" type="text" spellcheck="false" /></div>
-            <div class="field grow"><label>Senha do Wi-Fi</label><input id="nfPass" type="password" /></div>
+        <button id="nfWizClose" class="hidden"><span class="ico" data-icon="back"></span> Voltar ao meu fliperama</button>
+      </div>
+
+      <div class="nf-wiz">
+        <ol id="nfRail" class="nf-rail">
+          <li data-step="1"><span class="dot">1</span><span><b>Raspberry</b><small id="nfSum1">Escolha o modelo</small></span></li>
+          <li data-step="2"><span class="dot">2</span><span><b>Wi-Fi</b><small id="nfSum2">Rede da sua casa</small></span></li>
+          <li data-step="3"><span class="dot">3</span><span><b>Cartão</b><small id="nfSum3">Onde gravar</small></span></li>
+          <li data-step="4"><span class="dot">4</span><span><b>Gravar</b><small id="nfSum4">Uns 10 minutos</small></span></li>
+          <li data-step="5"><span class="dot">5</span><span><b>Ligar</b><small id="nfSum5">O app acha sozinho</small></span></li>
+        </ol>
+
+        <div class="nf-pane">
+          <section class="nf-page" data-step="1">
+            <h3>Qual é a sua Raspberry?</h3>
+            <p class="hint">O modelo vem escrito na placa (ex.: "Raspberry Pi 3 Model B").</p>
+            <div id="nfModels" class="nf-opts"></div>
+          </section>
+
+          <section class="nf-page" data-step="2">
+            <h3>Wi-Fi do fliperama</h3>
+            <p class="hint">Já vem preenchido com a rede deste computador. Deixe em branco para usar só o cabo.</p>
+            <div class="row">
+              <div class="field grow"><label>Rede (nome do Wi-Fi)</label><input id="nfSsid" type="text" spellcheck="false" /></div>
+              <div class="field grow"><label>Senha do Wi-Fi</label><input id="nfPass" type="password" /></div>
+            </div>
+            <div class="row nf-row">
+              <button id="nfKey"><span class="ico" data-icon="check"></span> Usar a senha salva neste computador</button>
+              <span id="nfKeyStatus" class="status"></span>
+            </div>
+            <p id="nfWifiWarn" class="nf-warn hidden"></p>
+          </section>
+
+          <section class="nf-page" data-step="3">
+            <h3>Cartão de memória</h3>
+            <p class="hint">Só aparecem cartões e pendrives. O disco do computador nunca entra nesta lista.</p>
+            <div id="nfDisks" class="nf-opts"></div>
+            <div class="row nf-row">
+              <button id="nfDiskReload"><span class="ico" data-icon="reload"></span> Atualizar lista</button>
+              <span id="nfDiskStatus" class="status"></span>
+            </div>
+          </section>
+
+          <section class="nf-page" data-step="4">
+            <h3>Gravar o cartão</h3>
+            <p class="hint">Confira e grave. O Windows pede permissão de administrador uma vez. Se ele pedir para formatar o
+              cartão no final, clique em <b>Cancelar</b>: é normal.</p>
+            <dl id="nfReview" class="nf-rows nf-review"></dl>
+            <p class="nf-erase"><span class="ico" data-icon="trash"></span> Tudo o que estiver no cartão será apagado.</p>
+            <div id="nfProgress" class="nf-progress hidden">
+              <div class="nf-meter-top"><b id="nfPhase">Começando</b><span id="nfPct"></span></div>
+              <div class="nf-bar"><i id="nfBar"></i></div>
+            </div>
+            <div class="row nf-row">
+              <button id="nfWrite" class="primary nf-big" disabled><span class="ico" data-icon="sd"></span> Gravar cartão</button>
+              <span id="nfWriteStatus" class="status"></span>
+            </div>
+          </section>
+
+          <section class="nf-page" data-step="5">
+            <h3>Ligue o fliperama</h3>
+            <ol class="nf-howto">
+              <li><span class="ico" data-icon="sd"></span><span>Tire o cartão do computador e coloque na Raspberry.</span></li>
+              <li><span class="ico" data-icon="power"></span><span>Ligue o fliperama. Na primeira vez ele leva uns 3 minutos.</span></li>
+              <li><span class="ico" data-icon="wifi"></span><span>Clique abaixo: o app acha o fliperama, dá o nome "fliperama" e já deixa ele conectado aqui.</span></li>
+            </ol>
+            <div class="row nf-row">
+              <button id="nfFind" class="primary nf-big"><span class="ico" data-icon="reload"></span> Encontrar o fliperama</button>
+              <span id="nfFindStatus" class="status"></span>
+            </div>
+          </section>
+
+          <div class="nf-nav">
+            <button id="nfBack"><span class="ico" data-icon="back"></span> Voltar</button>
+            <button id="nfNext" class="primary">Continuar <span class="ico" data-icon="forward"></span></button>
           </div>
-          <button id="nfKey"><span class="ico" data-icon="check"></span> Usar a senha salva neste computador</button>
-          <span id="nfKeyStatus" class="status"></span>
-          <p id="nfWifiWarn" class="nf-warn hidden"></p>
         </div>
-      </li>
-      <li class="nf-step">
-        <span class="nf-n">3</span>
-        <div>
-          <h3>Cartão de memória</h3>
-          <p class="hint">Só aparecem cartões e pendrives. O disco do computador nunca entra nesta lista.</p>
-          <div id="nfDisks" class="theme-grid nf-grid"></div>
-          <div class="row nf-row">
-            <button id="nfDiskReload"><span class="ico" data-icon="reload"></span> Atualizar lista</button>
-            <span id="nfDiskStatus" class="status"></span>
-          </div>
-        </div>
-      </li>
-      <li class="nf-step">
-        <span class="nf-n">4</span>
-        <div>
-          <h3>Gravar o cartão</h3>
-          <p class="hint">Tudo o que estiver no cartão será apagado. O Windows vai pedir permissão de administrador
-            uma vez. Se ele pedir para formatar o cartão no final, clique em <b>Cancelar</b>: é normal.</p>
-          <div class="row nf-row">
-            <button id="nfWrite" class="primary" disabled><span class="ico" data-icon="sd"></span> Gravar cartão</button>
-            <span id="nfWriteStatus" class="status"></span>
-          </div>
-        </div>
-      </li>
-      <li class="nf-step">
-        <span class="nf-n">5</span>
-        <div>
-          <h3>Ligar e conectar</h3>
-          <p class="hint">Tire o cartão, coloque na Raspberry e ligue. A primeira vez leva uns 3 minutos. Depois
-            clique abaixo: o app acha o fliperama, dá o nome "fliperama" e já deixa ele conectado aqui.</p>
-          <div class="row nf-row">
-            <button id="nfFind"><span class="ico" data-icon="reload"></span> Encontrar o fliperama</button>
-            <span id="nfFindStatus" class="status"></span>
-          </div>
-        </div>
-      </li>
-    </ol>
+      </div>
     </div>
   </section>
 
