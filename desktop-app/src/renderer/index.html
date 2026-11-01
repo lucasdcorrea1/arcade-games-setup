@@ -23,15 +23,76 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="baixar"><span class="ico" data-icon="gamepad"></span> Baixar</button>
+    <button class="tab active" data-tab="turbinar"><span class="ico" data-icon="bolt"></span> Turbinar</button>
+    <button class="tab" data-tab="baixar"><span class="ico" data-icon="gamepad"></span> Baixar</button>
     <button class="tab" data-tab="meus"><span class="ico" data-icon="library"></span> Meus jogos</button>
+    <button class="tab" data-tab="liberar"><span class="ico" data-icon="unlock"></span> Liberar tudo</button>
     <button class="tab" data-tab="temas"><span class="ico" data-icon="star"></span> Temas</button>
     <button class="tab" data-tab="novo"><span class="ico" data-icon="sd"></span> Novo fliperama</button>
   </nav>
 
+  <!-- TURBINAR: the paid add-on -->
+  <section class="panel active" data-panel="turbinar">
+    <div class="tb">
+      <div class="tb-hero">
+        <div class="tb-screen" id="tbScreen">
+          <img class="on" src="assets/turbinar/tv-select.webp" alt="Tela QUEM VAI JOGAR? no fliperama">
+          <img src="assets/turbinar/tv-versus.webp" alt="Tela VERSUS antes da luta">
+          <img src="assets/turbinar/tv-winner.webp" alt="Tela QUEM GANHOU? com o vencedor">
+        </div>
+        <div class="tb-copy">
+          <h2>Turbine seu fliperama</h2>
+          <ul class="tb-list">
+            <li><b>QUEM VAI JOGAR?</b> Cada um escolhe a própria cara antes de jogar.</li>
+            <li><b>VERSUS e QUEM GANHOU?</b> A luta é anunciada e a vitória vai para o placar.</li>
+            <li><b>No celular de cada um.</b> Fila de quem joga, ranking, torneio e escolher o jogo.</li>
+          </ul>
+          <div class="tb-buy" id="tbBuyBox">
+            <div><span>Ainda não tem o código? A compra é feita no site e o código chega na hora.</span></div>
+            <button id="tbBuy"><span class="ico" data-icon="star"></span> Comprar no site</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tb-cards">
+        <div class="tb-card" id="tbCodeCard">
+          <h3><span class="tb-n">1</span> Seu código de compra</h3>
+          <div id="tbCodeForm">
+            <p class="hint">Depois de pagar no site, o código aparece na tela. Copie e cole aqui, do jeito que veio.</p>
+            <textarea id="tbCode" rows="3" spellcheck="false" placeholder="ADZ-..."></textarea>
+            <button class="primary" id="tbActivate"><span class="ico" data-icon="check"></span> Ativar</button>
+          </div>
+          <div id="tbCodeOk" class="tb-ok" hidden><span class="ico" data-icon="check"></span> <span id="tbCodeText">Código ativo</span></div>
+          <div id="tbCodeStatus" class="status"></div>
+        </div>
+
+        <div class="tb-card" id="tbInstallCard">
+          <h3><span class="tb-n">2</span> Instalar no fliperama</h3>
+          <p class="hint">O fliperama precisa estar ligado e no mesmo Wi-Fi deste computador. Leva uns 2 minutos.</p>
+          <div id="tbCheck" class="status"></div>
+          <button class="primary" id="tbInstall" disabled><span class="ico" data-icon="bolt"></span> Instalar no fliperama</button>
+          <ol id="tbLog" class="tb-log"></ol>
+          <div id="tbDone" class="tb-done" hidden>
+            <img id="tbQr" alt="QR code da página do celular">
+            <div>
+              <b>Pronto! Seu fliperama foi turbinado.</b>
+              <p>Aponte a câmera do celular para o código e crie o seu jogador. No próximo jogo aparece a tela QUEM VAI JOGAR?.</p>
+              <code id="tbUrl"></code>
+            </div>
+          </div>
+          <div class="tb-foot">
+            <button class="link" id="tbUninstall">Desinstalar do fliperama</button>
+            <span id="tbVersion" class="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- BAIXAR -->
-  <section class="panel active" data-panel="baixar">
+  <section class="panel" data-panel="baixar">
     <div class="urlbar">
+      <button id="storeBtn" title="Escolher de qual site baixar"><span class="ico" data-icon="store"></span> <span id="storeName">Lojas</span></button>
       <button id="navBack" class="icon-btn" title="Voltar"><span class="ico" data-icon="back"></span></button>
       <button id="navForward" class="icon-btn" title="Avançar"><span class="ico" data-icon="forward"></span></button>
       <button id="navReload" class="icon-btn" title="Recarregar"><span class="ico" data-icon="reload"></span></button>
@@ -53,6 +114,18 @@
     </div>
     <div class="browse-body">
       <webview id="browser" partition="persist:browse"></webview>
+      <!-- first screen: pick the site to get games from -->
+      <div id="storePick" class="store-pick">
+        <div class="store-inner">
+          <h2>De onde você quer baixar os jogos?</h2>
+          <p class="hint">Escolha um site. Dá para trocar depois pelo botão da loja, lá em cima à esquerda.</p>
+          <div id="storeGrid" class="store-grid"></div>
+          <form id="storeOther" class="store-other">
+            <input id="storeOtherUrl" type="text" placeholder="Outro site: digite o endereço" spellcheck="false" />
+            <button type="submit">Abrir</button>
+          </form>
+        </div>
+      </div>
     </div>
 
     <!-- Send bar (shared by downloads and PC imports) -->
@@ -95,6 +168,32 @@
     <div id="libStatus" class="status"></div>
     <div id="libContainer"></div>
   </section>
+
+  <!-- LIBERAR TUDO -->
+  <section class="panel" data-panel="liberar">
+    <div class="lib-head">
+      <h2>Liberar tudo</h2>
+      <button id="unlReload"><span class="ico" data-icon="reload"></span> Atualizar</button>
+    </div>
+    <p class="hint">Libera os personagens secretos dos jogos que estão no fliperama. Quando o jogo guarda
+      o progresso no cartão de memória, um clique resolve. Nos jogos de fliperama, que não guardam nada,
+      aparecem os códigos para fazer na tela de escolha.</p>
+    <div id="unlStatus" class="status"></div>
+    <div id="unlGrid" class="unl-grid"></div>
+  </section>
+
+  <!-- UNLOCK CODES MODAL -->
+  <div id="unlModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="unlModalTitle"></span>
+        <button id="unlModalClose" class="icon-btn"><span class="ico" data-icon="close"></span></button>
+      </div>
+      <p id="unlModalHow" class="hint"></p>
+      <div id="unlCodes" class="unl-codes"></div>
+      <p id="unlModalTip" class="hint unl-tip"></p>
+    </div>
+  </div>
 
   <!-- TEMAS -->
   <section class="panel" data-panel="temas">
@@ -432,5 +531,7 @@
   </footer>
 
   <script src="renderer.js"></script>
+  <script src="unlocks.js"></script>
+  <script src="turbinar.js"></script>
 </body>
 </html>

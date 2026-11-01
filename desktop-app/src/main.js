@@ -9,11 +9,15 @@ const net = require('net');
 const { URL } = require('url');
 const SftpClient = require('ssh2-sftp-client');
 const { Client: SshClient } = require('ssh2');
+const { execFile } = require('child_process');
 const { XMLParser, XMLBuilder } = require('fast-xml-parser');
-const { SYSTEMS, systemFromUrl } = require('./systems');
+const { SYSTEMS, systemFromUrl, systemFromTitle } = require('./systems');
 const setup = require('./setup');
 const themes = require('./themes');
 const bundledTheme = require('./bundled-theme');
+const unlocks = require('./unlocks');
+const license = require('./license');
+const turbinar = require('./turbinar');
 
 const APP_ID = 'com.lucascorrea.retropieromsender';
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -39,6 +43,7 @@ const USER_AGENT =
 
 let mainWindow = null;
 let lastBrowseUrl = '';            // last page the user was on in the embedded browser
+let lastBrowseTitle = '';          // ...and its title (names the console on some sites)
 const popupWindows = new Set();    // pop-ups opened by the embedded browser
 const downloadingWindows = new Set(); // pop-ups that actually started a download
 
@@ -231,26 +236,46 @@ async function sftpList(settings, folder) {
   }
 }
 
-async function sftpUpload(settings, { localPath, folder, filename, overwrite }) {
+// Free bytes on the card that holds the roms folder.
+async function piFreeBytes(settings) {
+  const out = await sshExec(settings, `df -Pk '${settings.romsBase.replace(/'/g, '')}' | tail -1 | awk '{print $4}'`);
+  const kb = parseInt(out.trim(), 10);
+  return Number.isFinite(kb) ? kb * 1024 : null;
+}
+
+// extraFiles: the other files of a disc image (tracks), sent before the main file so the game only
+// shows up once it is complete.
+async function sftpUpload(settings, { localPath, folder, filename, overwrite, extraFiles = [] }) {
   const sftp = new SftpClient();
   const remoteDir = `${settings.romsBase}/${folder}`.replace(/\/+/g, '/');
   const remotePath = `${remoteDir}/${filename}`;
+  const files = [...extraFiles, { localPath, filename }].map((f) => ({ ...f, size: fs.statSync(f.localPath).size }));
+  const total = files.reduce((n, f) => n + f.size, 0);
   try {
     await sftp.connect(connectConfig(settings));
     await sftp.mkdir(remoteDir, true);
     if (!overwrite && (await sftp.exists(remotePath))) {
       return { ok: false, reason: 'exists', remotePath };
     }
-    const total = fs.statSync(localPath).size;
-    await sftp.fastPut(localPath, remotePath, {
-      step: (transferred) => {
-        sendToRenderer('upload:progress', {
-          transferred,
-          total,
-          percent: total ? Math.round((transferred / total) * 100) : 0
-        });
-      }
-    });
+    const free = await piFreeBytes(settings).catch(() => null);
+    if (free != null && free < total + 50e6) {
+      const gb = (b) => `${(b / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB`;
+      throw new Error(`Não cabe no fliperama: o jogo tem ${gb(total)} e só sobram ${gb(free)} livres. ` +
+        'Apague jogos na aba "Meus jogos" e tente de novo.');
+    }
+    let done = 0;
+    for (const f of files) {
+      await sftp.fastPut(f.localPath, `${remoteDir}/${f.filename}`, {
+        step: (transferred) => {
+          sendToRenderer('upload:progress', {
+            transferred: done + transferred,
+            total,
+            percent: total ? Math.round(((done + transferred) / total) * 100) : 0
+          });
+        }
+      });
+      done += f.size;
+    }
     return { ok: true, remotePath };
   } finally {
     try { await sftp.end(); } catch { /* ignore */ }
@@ -382,8 +407,43 @@ function isFamous(name) {
   return FAMOUS.some((k) => n.includes(k));
 }
 
+// A disc image is one game spread over several files: a list (.gdi/.cue/.m3u/.ccd) plus the
+// tracks it names. Returns the names of the files it references in its own folder.
+const DISC_LIST_FILE = /\.(gdi|cue|m3u|ccd)$/i;
+function discTrackNames(listName, text) {
+  const ext = path.extname(listName).toLowerCase();
+  const names = [];
+  if (ext === '.gdi') {
+    for (const l of text.split(/\r?\n/).slice(1)) {
+      const m = /^\s*\d+\s+\d+\s+\d+\s+\d+\s+(?:"([^"]+)"|(\S+))/.exec(l);
+      if (m) names.push(m[1] || m[2]);
+    }
+  } else if (ext === '.cue') {
+    for (const m of text.matchAll(/^\s*FILE\s+(?:"([^"]+)"|(\S+))/gim)) names.push(m[1] || m[2]);
+  } else if (ext === '.m3u') {
+    for (const l of text.split(/\r?\n/)) if (l.trim() && !l.startsWith('#')) names.push(l.trim());
+  } else if (ext === '.ccd') {
+    const base = listName.replace(/\.ccd$/i, '');
+    names.push(`${base}.img`, `${base}.sub`);
+  }
+  return names.filter((n) => !/[\\/]/.test(n)); // only files next to the list
+}
+
+// For every disc list in a folder listing: { listName: [track names present in the folder] }.
+async function discTracksIn(sftp, dir, files) {
+  const present = new Set(files.map((f) => f.name));
+  const out = {};
+  for (const f of files.filter((x) => DISC_LIST_FILE.test(x.name) && x.size < 64 * 1024)) {
+    try {
+      out[f.name] = discTrackNames(f.name, (await sftp.get(`${dir}/${f.name}`)).toString('latin1')).filter((n) => present.has(n));
+    } catch { out[f.name] = []; }
+  }
+  return out;
+}
+
 // Scan the whole roms tree: list systems, read each gamelist.xml for names/covers, and
 // stream the game list first, then the cover images (as data URLs) as they are fetched.
+// Disc images show up once, as their list file with the size of all its tracks.
 async function scanLibrary(settings) {
   const sftp = new SftpClient();
   const romsBase = settings.romsBase.replace(/\/+$/, '');
@@ -441,7 +501,13 @@ async function scanLibrary(settings) {
       const dir = `${romsBase}/${folder}`;
       let files;
       try { files = await sftp.list(dir); } catch { continue; }
-      const roms = files.filter((f) => f.type === '-' && !/\.(xml|txt|dat|cfg|md)$/i.test(f.name));
+      // Hidden files are partial uploads and the like, never games.
+      const fileList = files.filter((f) => f.type === '-' && !f.name.startsWith('.') && !/\.(xml|txt|dat|cfg|md)$/i.test(f.name));
+      const discs = await discTracksIn(sftp, dir, fileList);
+      const tracks = new Set(Object.values(discs).flat());
+      const sizeOf = Object.fromEntries(fileList.map((f) => [f.name, f.size || 0]));
+      const roms = fileList.filter((f) => !tracks.has(f.name))
+        .map((f) => (discs[f.name] ? { ...f, size: discs[f.name].reduce((n, t) => n + sizeOf[t], f.size || 0) } : f));
       if (!roms.length) continue;
 
       let gamesXml = [];
@@ -500,6 +566,8 @@ async function scanLibrary(settings) {
 }
 
 // Delete a game: remove the ROM file and, best-effort, its gamelist entry + cover image.
+// A disc image goes with all its tracks (except any another disc in the folder also uses), and a
+// track on its own is never deleted, since that would break the game it belongs to.
 async function sftpDeleteGame(settings, { folder, romFile }) {
   const sftp = new SftpClient();
   const romsBase = settings.romsBase.replace(/\/+$/, '');
@@ -509,7 +577,13 @@ async function sftpDeleteGame(settings, { folder, romFile }) {
   try {
     await sftp.connect(connectConfig(settings));
 
-    // 1) The ROM file itself.
+    // 1) The ROM file itself, plus the tracks of a disc image.
+    const files = (await sftp.list(dir)).filter((f) => f.type === '-');
+    const discs = await discTracksIn(sftp, dir, files);
+    const owner = Object.keys(discs).find((l) => l !== romFile && discs[l].includes(romFile));
+    if (owner) throw new Error(`Esse arquivo é uma parte do jogo "${owner}". Apague o jogo inteiro por ele.`);
+    const usedElsewhere = new Set(Object.entries(discs).filter(([l]) => l !== romFile).flatMap(([, t]) => t));
+    for (const t of (discs[romFile] || []).filter((n) => !usedElsewhere.has(n))) await sftp.delete(`${dir}/${t}`);
     if (await sftp.exists(romPath)) await sftp.delete(romPath);
 
     // 2) Clean the gamelist entry (and delete the image it referenced).
@@ -886,6 +960,136 @@ async function findBoxartUrl(folder, romBase, title) {
   return null;
 }
 
+// Best-effort: grab box art, stored alongside the ROM in <folder>/images/. Returns its path or null.
+async function fetchBoxart(destDir, folder, romBase, title) {
+  try {
+    const boxUrl = await findBoxartUrl(folder, romBase, title);
+    if (!boxUrl) return null;
+    const imagesDir = path.join(destDir, 'images');
+    fs.mkdirSync(imagesDir, { recursive: true });
+    const coverPath = path.join(imagesDir, `${romBase}.png`);
+    await downloadToFile(boxUrl, LIBRETRO_THUMBS, coverPath, null);
+    return coverPath;
+  } catch { return null; } // cover is optional
+}
+
+// The game's name in a download page title ("Download <game> - Sega Dreamcast ROM - Download",
+// "<game> ROM - Sega Dreamcast Game"), for the box art lookup.
+function gameFromTitle(title) {
+  return (title || '').split(/\s[-–|]\s/)[0].replace(/^(download|baixar)\s+/i, '').replace(/\s+rom$/i, '').trim();
+}
+
+// --- Disc images --------------------------------------------------------------
+// Dreamcast, PlayStation & co. come zipped, but those emulators only read the image itself
+// (es_systems dreamcast: .cdi .chd .gdi). Unpack with Windows' own tar (libarchive: zip and 7z) and
+// give the track files a per-game prefix, so two games never overwrite each other's "track01.bin".
+// Plain ROM zips (cartridges, arcade sets) are left alone: their emulators read them as they are.
+const ARCHIVE_EXT = /\.(zip|7z)$/i;
+const DISC_MAIN_ORDER = ['.gdi', '.cdi', '.chd', '.m3u', '.cue', '.ccd', '.iso'];
+const DISC_LISTS = ['.gdi', '.cue', '.m3u', '.ccd']; // text files that name the other files of the disc
+
+function runTar(args) {
+  const tar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  return new Promise((resolve, reject) => {
+    execFile(tar, args, { maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) =>
+      (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
+  });
+}
+
+function listFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .flatMap((d) => (d.isDirectory() ? listFiles(path.join(dir, d.name)) : [path.join(dir, d.name)]));
+}
+
+// Copy a file without its first `skip` bytes.
+function copyFrom(src, dst, skip) {
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(src, { start: skip }).on('error', reject)
+      .pipe(fs.createWriteStream(dst)).on('error', reject).on('finish', resolve);
+  });
+}
+
+// A Redump Dreamcast dump (.cue + one .bin per track) as the .gdi reicast lists. Each track's LBA is
+// where its INDEX 01 sits: the single-density area starts at 0, the high-density area at 45000, and the
+// pregap before INDEX 01 is cut from the track file (audio track 2 of a 3-track disc: LBA = track 1
+// sectors + 150). Returns the .gdi path, or null when the .cue is not a GD-ROM layout.
+async function cueToGdi(cuePath) {
+  const dir = path.dirname(cuePath);
+  const tracks = [];
+  let file = null;
+  let hd = false;
+  for (const raw of fs.readFileSync(cuePath, 'latin1').split(/\r?\n/)) {
+    const l = raw.trim();
+    let m;
+    if (/^REM\s+HIGH-DENSITY/i.test(l)) hd = true;
+    else if ((m = /^FILE\s+"(.+)"\s+\S+$/i.exec(l) || /^FILE\s+(\S+)\s+\S+$/i.exec(l))) file = m[1];
+    else if ((m = /^TRACK\s+(\d+)\s+(\S+)/i.exec(l))) tracks.push({ n: Number(m[1]), audio: /^AUDIO$/i.test(m[2]), file, hd, index1: 0 });
+    else if ((m = /^INDEX\s+01\s+(\d+):(\d+):(\d+)/.exec(l)) && tracks.length) {
+      tracks[tracks.length - 1].index1 = (Number(m[1]) * 60 + Number(m[2])) * 75 + Number(m[3]);
+    }
+  }
+  if (!tracks.some((t) => t.hd) || tracks.some((t) => !t.file || !fs.existsSync(path.join(dir, t.file)))) return null;
+  if (new Set(tracks.map((t) => t.file)).size !== tracks.length) return null; // one file per track only
+
+  let pos = 0;
+  let inHd = false;
+  const lines = [];
+  for (const t of tracks) {
+    if (t.hd && !inHd) { pos = 45000; inHd = true; }
+    const src = path.join(dir, t.file);
+    const sectors = Math.floor(fs.statSync(src).size / 2352);
+    const name = `track${String(t.n).padStart(2, '0')}.${t.audio ? 'raw' : 'bin'}`;
+    if (t.index1) { await copyFrom(src, path.join(dir, name), t.index1 * 2352); fs.unlinkSync(src); }
+    else fs.renameSync(src, path.join(dir, name));
+    lines.push(`${t.n} ${pos + t.index1} ${t.audio ? 0 : 4} 2352 ${name} 0`);
+    pos += sectors;
+  }
+  const gdi = cuePath.replace(/\.cue$/i, '.gdi');
+  fs.writeFileSync(gdi, `${tracks.length}\r\n${lines.join('\r\n')}\r\n`, 'latin1');
+  fs.unlinkSync(cuePath);
+  return gdi;
+}
+
+// Returns { filename, localPath, extraFiles: [{ filename, localPath }] } for a zipped disc image,
+// or null when the file should be sent as it is. (The cabinet's reicast launcher picks the Dreamcast
+// region from each disc on its own.)
+async function unpackDiscImage(archivePath, folder) {
+  if (process.platform !== 'win32' || !ARCHIVE_EXT.test(archivePath)) return null;
+  let names;
+  try { names = (await runTar(['-tf', archivePath])).split(/\r?\n/).filter(Boolean); } catch { return null; }
+  if (!names.some((n) => DISC_MAIN_ORDER.includes(path.extname(n).toLowerCase()))) return null;
+
+  const dest = archivePath.replace(ARCHIVE_EXT, '');
+  fs.mkdirSync(dest, { recursive: true });
+  await runTar(['-xf', archivePath, '-C', dest]);
+  const files = listFiles(dest);
+  let main = DISC_MAIN_ORDER.map((ext) => files.find((f) => path.extname(f).toLowerCase() === ext)).find(Boolean);
+  if (!main) return null;
+  // reicast only lists .cdi/.chd/.gdi: a Redump .cue/.bin set has to become a .gdi.
+  if (folder === 'dreamcast' && /\.cue$/i.test(main)) main = (await cueToGdi(main)) || main;
+
+  const dir = path.dirname(main);
+  const extraFiles = [];
+  if (DISC_LISTS.includes(path.extname(main).toLowerCase())) {
+    let list = fs.readFileSync(main, 'latin1');
+    const prefix = path.basename(main).replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (full === main || !fs.statSync(full).isFile() || !list.includes(name)) continue;
+      const renamed = name.startsWith(`${prefix}_`) ? name : `${prefix}_${name.replace(/\s+/g, '_')}`;
+      if (renamed !== name) {
+        fs.renameSync(full, path.join(dir, renamed));
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        list = list.replace(new RegExp(`"${esc}"`, 'g'), `"${renamed}"`)
+          .replace(new RegExp(`(^|[\\s])${esc}(?=[\\s]|$)`, 'gm'), `$1${renamed}`);
+      }
+      extraFiles.push({ filename: renamed, localPath: path.join(dir, renamed) });
+    }
+    fs.writeFileSync(main, list, 'latin1');
+  }
+  return { filename: path.basename(main), localPath: main, extraFiles };
+}
+
 // Download a retrostic game page into the permanent library.
 // opts: { folder } to force the target system (batch mode knows it up front),
 //       { onProgress(percent) } for per-item progress, { silent } to skip the
@@ -910,20 +1114,7 @@ async function downloadFromRetrostic(pageUrl, opts = {}) {
     if (!opts.silent) sendToRenderer('download:progress', { filename, received, total, percent });
   });
 
-  // Best-effort: grab box art, stored alongside the ROM in <folder>/images/.
-  let coverLocalPath = null;
-  try {
-    const romBase = filename.replace(/\.[^.]+$/, '');
-    const boxUrl = await findBoxartUrl(det.folder, romBase, gameTitle);
-    if (boxUrl) {
-      const imagesDir = path.join(destDir, 'images');
-      fs.mkdirSync(imagesDir, { recursive: true });
-      const coverPath = path.join(imagesDir, `${romBase}.png`);
-      await downloadToFile(boxUrl, LIBRETRO_THUMBS, coverPath, null);
-      coverLocalPath = coverPath;
-    }
-  } catch { /* cover is optional */ }
-
+  const coverLocalPath = await fetchBoxart(destDir, det.folder, filename.replace(/\.[^.]+$/, ''), gameTitle);
   const payload = { filename, localPath, slug: det.slug, folder: det.folder, pageUrl, coverLocalPath, gameTitle };
   if (!opts.silent) sendToRenderer('download:ready', payload);
   return payload;
@@ -1133,13 +1324,17 @@ function setupDownloadInterception() {
 
     // Detect the system from (in order): the download URL, the page that triggered
     // it, or the last page the user browsed to. Pop-up download windows often have a
-    // URL without the "/roms/<slug>/" segment, so the last browsed page is the fallback.
+    // URL without the "/roms/<slug>/" segment, so the last browsed page is the fallback;
+    // download pages that only name the console in their title (romspure) come last.
     const itemUrl = item.getURL ? item.getURL() : '';
     const pageUrl = webContents ? webContents.getURL() : '';
+    const pageTitle = webContents ? webContents.getTitle() : '';
     const detected =
       systemFromUrl(itemUrl) ||
       systemFromUrl(pageUrl) ||
+      systemFromTitle(pageTitle) ||
       systemFromUrl(lastBrowseUrl) ||
+      systemFromTitle(lastBrowseTitle) ||
       { slug: '', folder: '' };
 
     // Save into the permanent library under the detected system (or "_incoming").
@@ -1162,24 +1357,32 @@ function setupDownloadInterception() {
       }
     });
 
-    item.once('done', (_e, state) => {
+    item.once('done', async (_e, state) => {
       // Close the pop-up window that triggered this download (if any).
       const originWin = webContents ? BrowserWindow.fromWebContents(webContents) : null;
       if (originWin) downloadingWindows.delete(originWin);
       if (originWin && popupWindows.has(originWin) && !originWin.isDestroyed()) {
         originWin.close();
       }
-      if (state === 'completed') {
-        sendToRenderer('download:ready', {
-          filename,
-          localPath: savePath,
-          slug: detected.slug,
-          folder: detected.folder,
-          pageUrl
-        });
-      } else {
+      if (state !== 'completed') {
         sendToRenderer('download:failed', { filename, state });
+        return;
       }
+      // Ready for the Pi: disc images unpacked, plus box art, so automatic mode can send it all.
+      const ready = { filename, localPath: savePath, slug: detected.slug, folder: detected.folder, pageUrl, extraFiles: [] };
+      try {
+        sendToRenderer('download:preparing', { filename });
+        const disc = await unpackDiscImage(savePath, detected.folder);
+        if (disc) Object.assign(ready, disc);
+      } catch (err) {
+        sendToRenderer('download:failed', { filename, state: `não consegui descompactar: ${err.message}` });
+        return;
+      }
+      if (detected.folder) {
+        ready.coverLocalPath = await fetchBoxart(destDir, detected.folder, ready.filename.replace(/\.[^.]+$/, ''),
+          gameFromTitle(pageTitle || lastBrowseTitle));
+      }
+      sendToRenderer('download:ready', ready);
     });
   });
 }
@@ -1197,7 +1400,7 @@ function registerIpc() {
   ipcMain.handle('settings:get', () => loadSettings());
   ipcMain.handle('settings:save', (_e, s) => saveSettings(s));
   ipcMain.handle('systems:get', () => SYSTEMS);
-  ipcMain.on('browse:url', (_e, url) => { lastBrowseUrl = url || ''; });
+  ipcMain.on('browse:url', (_e, url, title) => { lastBrowseUrl = url || ''; lastBrowseTitle = title || ''; });
   ipcMain.handle('retrostic:download', (_e, pageUrl) => downloadFromRetrostic(pageUrl || lastBrowseUrl));
 
   // Batch auto-download (crawl a whole category, then download + send each game).
@@ -1244,6 +1447,27 @@ function registerIpc() {
     return r;
   });
 
+  // "Turbine seu fliperama": purchase code, cabinet check, install / uninstall.
+  const licenses = () => license.store(app.getPath('userData'));
+  ipcMain.handle('turbinar:state', () => ({ license: licenses().get(), version: turbinar.bundleVersion() }));
+  ipcMain.handle('turbinar:activate', (_e, code) => licenses().set(code));
+  ipcMain.handle('turbinar:check', (_e, settings) => turbinar.check(connectConfig(settings)));
+  ipcMain.handle('turbinar:install', async (_e, settings) => {
+    if (!licenses().get()) throw new Error('Ative o seu código de compra primeiro.');
+    const progress = (p) => sendToRenderer('turbinar:progress', p);
+    progress({ text: 'Enviando o tema Arcade do Zero' });
+    await bundledTheme.sync(connectConfig(settings), esHomeDir(settings), (p) => progress({ text: 'Enviando o tema Arcade do Zero', percent: p.percent }));
+    await piSetTheme(settings, bundledTheme.ID);
+    return turbinar.install(connectConfig(settings), progress);
+  });
+  ipcMain.handle('turbinar:uninstall', (_e, settings) =>
+    turbinar.uninstall(connectConfig(settings), (p) => sendToRenderer('turbinar:progress', p)));
+  ipcMain.handle('turbinar:qr', (_e, ip) => turbinar.qr(ip));
+  // links the app may open in the browser: the WhatsApp to buy, and the site
+  ipcMain.handle('app:openExternal', (_e, url) => {
+    if (/^https:\/\/(wa\.me|lucasdcorrea1\.github\.io)\//.test(String(url))) shell.openExternal(url);
+  });
+
   ipcMain.handle('dialog:pickFile', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
       title: 'Selecione a ROM',
@@ -1280,6 +1504,10 @@ function registerIpc() {
   ipcMain.handle('library:scan', (_e, settings) => scanLibrary(settings));
   ipcMain.handle('sftp:deleteGame', (_e, { settings, job }) => sftpDeleteGame(settings, job));
   ipcMain.handle('ssh:restartES', (_e, settings) => restartEmulationStation(settings));
+
+  // "Liberar tudo": unlock every character in the games that support it.
+  ipcMain.handle('unlocks:list', (_e, settings) => unlocks.list(settings, { connectConfig }));
+  ipcMain.handle('unlocks:apply', (_e, { settings, id }) => unlocks.apply(settings, id, { connectConfig, sshExec }));
 
   // "Novo fliperama": write RetroPie to an SD card, then find and configure the new Pi.
   ipcMain.handle('setup:piInfo', (_e, settings) => setup.piInfo(sshExec, settings));

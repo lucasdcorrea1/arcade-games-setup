@@ -29,7 +29,9 @@ const ICONS = {
   sd: '<path d="M8 3h8.5L19 5.5V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6z"/><path d="M9 7v3M12 7v3M15 7v3"/>',
   board: '<rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M2 9h2M2 15h2M20 9h2M20 15h2M9 2v3M15 2v3M9 19v3M15 19v3"/>',
   wifi: '<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 16a5 5 0 0 1 6.6 0"/><path d="M12 19.5h0"/>',
-  power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>'
+  power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
+  store: '<path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9"/><path d="M3 10 5 4h14l2 6"/><path d="M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M10 20v-5h4v5"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/><path d="M12 15v2"/>'
 };
 function svgIcon(name, extraClass) {
   const body = ICONS[name] || '';
@@ -273,16 +275,13 @@ async function sendToPi(info, statusEl, auto) {
   if (!requireHost()) return false;
   setStatus(statusEl, 'Enviando jogo…');
   try {
-    let res = await window.api.upload(settings, {
-      localPath: info.localPath, folder: info.folder, filename: info.filename, overwrite: !!auto
-    });
+    const job = { localPath: info.localPath, folder: info.folder, filename: info.filename, extraFiles: info.extraFiles || [] };
+    let res = await window.api.upload(settings, { ...job, overwrite: !!auto });
     if (!res.ok && res.reason === 'exists') {
       if (auto) {
         res = { ok: true }; // already there: keep going (still apply cover)
       } else if (confirm(`Já existe "${info.filename}" na pasta. Sobrescrever?`)) {
-        res = await window.api.upload(settings, {
-          localPath: info.localPath, folder: info.folder, filename: info.filename, overwrite: true
-        });
+        res = await window.api.upload(settings, { ...job, overwrite: true });
       } else {
         setStatus(statusEl, 'Cancelado (já existe).');
         return false;
@@ -308,7 +307,7 @@ async function sendToPi(info, statusEl, auto) {
     setStatus(statusEl, `Pronto${coverMsg}! Já está no fliperama ✅`, 'ok');
     return true;
   } catch (err) {
-    setStatus(statusEl, 'Erro: ' + err.message, 'err');
+    setStatus(statusEl, plainError(err), 'err');
     return false;
   }
 }
@@ -343,20 +342,101 @@ window.api.onUploadProgress((d) => {
 // Embedded browser + download
 // ---------------------------------------------------------------------------
 const wv = $('browser');
+let wvReady = false;   // loadURL/goBack only work after the webview's first dom-ready
+let currentStore = null;
+const LAST_STORE_KEY = 'lastStore';
+// Sites the "Baixar" tab starts from. Only retrostic has the direct pipeline (one-click download
+// without the ad countdown, whole categories); on the others the site's own button is used and the
+// download is caught like any other.
+// logo: the site's own logo (assets/stores), shown on a band in the site's colors.
+const STORES = [
+  { id: 'retrostic', name: 'Retrostic', host: 'retrostic.com', home: HOME_URL,
+    logo: 'assets/stores/retrostic.png', logoH: 40, color: '#3cc6f0', band: '#0d2433',
+    about: 'Em português, com os videogames clássicos. Tem o botão "Baixar este jogo" (sem anúncio) e o download de uma categoria inteira.' },
+  { id: 'romspure', name: 'RomsPure', host: 'romspure.cc', home: 'https://romspure.cc/roms/',
+    logo: 'assets/stores/romspure.png', logoH: 64, color: '#f7941d', band: '#2e1c08',
+    about: 'Em inglês, com as versões originais dos jogos e consoles mais novos, como o Dreamcast. O download é pelo botão do próprio site, depois de alguns segundos.' },
+  { id: 'romsfun', name: 'RomsFun', host: 'romsfun.com', home: 'https://romsfun.com/roms/',
+    logo: 'assets/stores/romsfun.png', logoH: 30, color: '#e8467c', band: '#2c0f1f',
+    about: 'Em inglês, com a lista mais longa de consoles (até NAOMI e Neo Geo CD). O download também é pelo botão do próprio site.' }
+];
+
+function browseTo(url) {
+  $('storePick').classList.add('hidden');
+  if (wvReady) wv.loadURL(url); else wv.src = url;
+}
 function navTo(url) {
   let u = url.trim();
+  if (!u) return;
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  wv.loadURL(u);
+  browseTo(u);
 }
-function onBrowseNav(url) { currentBrowseUrl = url; $('navUrl').value = url; window.api.setBrowseUrl(url); }
+const isRetrostic = (url) => { try { return /(^|\.)retrostic\.com$/i.test(new URL(url).hostname); } catch { return false; } };
+function onBrowseNav(url) {
+  currentBrowseUrl = url;
+  $('navUrl').value = url;
+  window.api.setBrowseUrl(url, wvReady ? wv.getTitle() : '');
+  $('dlGame').classList.toggle('hidden', !isRetrostic(url));
+  $('batchBtn').classList.toggle('hidden', !isRetrostic(url));
+}
 
+function lastStoreId() { try { return localStorage.getItem(LAST_STORE_KEY) || ''; } catch { return ''; } }
+
+function showStorePicker() {
+  const grid = $('storeGrid');
+  grid.innerHTML = '';
+  const last = lastStoreId();
+  for (const s of STORES) {
+    const card = document.createElement('button');
+    card.className = 'store-card';
+    card.style.setProperty('--store', s.color);
+    card.style.setProperty('--store-band', s.band);
+    const band = document.createElement('span'); band.className = 'store-band';
+    const logo = document.createElement('img'); logo.src = s.logo; logo.alt = s.name; logo.style.height = `${s.logoH}px`;
+    band.appendChild(logo);
+    const body = document.createElement('span'); body.className = 'store-body';
+    const head = document.createElement('span'); head.className = 'store-head';
+    const name = document.createElement('span'); name.className = 'store-name'; name.textContent = s.name;
+    const host = document.createElement('span'); host.className = 'store-host'; host.textContent = s.host;
+    head.append(name, host);
+    const about = document.createElement('span'); about.className = 'store-about'; about.textContent = s.about;
+    body.append(head, about);
+    card.append(band, body);
+    if (s.id === last) {
+      const b = document.createElement('span'); b.className = 'store-last'; b.textContent = 'ÚLTIMA USADA';
+      card.appendChild(b);
+    }
+    card.addEventListener('click', () => openStore(s));
+    grid.appendChild(card);
+  }
+  $('storePick').classList.remove('hidden');
+}
+
+function openStore(s) {
+  currentStore = s;
+  try { localStorage.setItem(LAST_STORE_KEY, s.id); } catch { /* not remembered */ }
+  $('storeName').textContent = s.name;
+  browseTo(s.home);
+}
+
+$('storeBtn').addEventListener('click', showStorePicker);
+$('storeOther').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const url = $('storeOtherUrl').value.trim();
+  if (!url) return;
+  currentStore = null;
+  $('storeName').textContent = 'Lojas';
+  navTo(url);
+});
 $('navUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') navTo($('navUrl').value); });
-$('navBack').addEventListener('click', () => { if (wv.canGoBack()) wv.goBack(); });
-$('navForward').addEventListener('click', () => { if (wv.canGoForward()) wv.goForward(); });
-$('navReload').addEventListener('click', () => wv.reload());
-$('navHome').addEventListener('click', () => wv.loadURL(HOME_URL));
+$('navBack').addEventListener('click', () => { if (wvReady && wv.canGoBack()) wv.goBack(); });
+$('navForward').addEventListener('click', () => { if (wvReady && wv.canGoForward()) wv.goForward(); });
+$('navReload').addEventListener('click', () => { if (wvReady) wv.reload(); });
+$('navHome').addEventListener('click', () => { if (currentStore) browseTo(currentStore.home); else showStorePicker(); });
+wv.addEventListener('dom-ready', () => { wvReady = true; });
 wv.addEventListener('did-navigate', (e) => onBrowseNav(e.url));
 wv.addEventListener('did-navigate-in-page', (e) => onBrowseNav(e.url));
+wv.addEventListener('page-title-updated', (e) => window.api.setBrowseUrl(currentBrowseUrl, e.title));
 
 $('dlGame').addEventListener('click', async () => {
   const url = currentBrowseUrl || $('navUrl').value;
@@ -406,10 +486,13 @@ window.api.onDownloadFailed((d) => {
   setStatus($('sbStatus'), `Download falhou (${d.state}).`, 'err');
   statusBar.set(`Download falhou: ${d.filename}`, { kind: 'err' });
 });
+window.api.onDownloadPreparing(() => {
+  setStatus($('sbStatus'), 'Download concluído. Preparando (descompactando se precisar e buscando a capa)…');
+});
 window.api.onDownloadReady(async (d) => {
   const info = {
     filename: d.filename, localPath: d.localPath, folder: d.folder,
-    coverLocalPath: d.coverLocalPath, source: 'download'
+    coverLocalPath: d.coverLocalPath, extraFiles: d.extraFiles || [], source: 'download'
   };
   showSendBar(info);
   // Automatic mode: if the console was detected, send it all the way through.
@@ -668,7 +751,8 @@ window.api.onLibraryLogo(({ folder, dataUrl }) => {
 });
 
 async function deleteGame(folder, romFile) {
-  if (!confirm(`Remover "${romFile}" do fliperama?\n\nIsso apaga o arquivo do jogo (e a capa) da Raspberry. Não dá pra desfazer.`)) return;
+  const parts = /\.(gdi|cue|m3u|ccd)$/i.test(romFile) ? ', todas as partes do disco' : '';
+  if (!confirm(`Remover "${romFile}" do fliperama?\n\nIsso apaga o arquivo do jogo${parts} (e a capa) da Raspberry. Não dá pra desfazer.`)) return;
   setStatus($('libStatus'), `Removendo ${romFile}…`);
   try {
     await window.api.deleteGame(settings, { folder, romFile });
@@ -683,7 +767,7 @@ async function deleteGame(folder, romFile) {
     if (settings.restartAfterUpload) { try { await window.api.restartES(settings); } catch { /* best effort */ } }
     setStatus($('libStatus'), `"${romFile}" removido. ✅`, 'ok');
   } catch (err) {
-    setStatus($('libStatus'), 'Erro ao remover: ' + err.message, 'err');
+    setStatus($('libStatus'), 'Erro ao remover: ' + plainError(err), 'err');
   }
 }
 
@@ -1767,9 +1851,10 @@ async function init() {
     settings = await window.api.saveSettings(settings);
   });
 
-  // Browser.
-  $('navUrl').value = HOME_URL;
-  wv.src = HOME_URL;
+  // Browser: the first screen asks which site to get games from.
+  $('dlGame').classList.add('hidden');
+  $('batchBtn').classList.add('hidden');
+  showStorePicker();
 
   // Bottom status bar starts idle.
   statusBar.idle();

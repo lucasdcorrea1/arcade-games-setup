@@ -4,6 +4,9 @@
   <view name="system, basic, detailed, video">
     <image name="title" extra="true"><path>./title.png</path></image>
   </view>
+  <view name="basic, detailed, video">
+    <textlist name="gamelist"><selectorImagePath>./selector.png</selectorImagePath></textlist>
+  </view>
   <view name="system">
     <image name="logo"><path>./wheel.png</path></image>
     <image name="screen" extra="true"><path>./showcase.jpg</path></image>

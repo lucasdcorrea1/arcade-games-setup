@@ -2,7 +2,18 @@
   <formatVersion>4</formatVersion>
   <include>./../_inc/layout.xml</include>
   <view name="system, basic, detailed, video">
+    <image name="bg" extra="true"><path>./../_inc/art/ajustes/bg.jpg</path></image>
+    <image name="char" extra="true"><path>./../_inc/art/ajustes/char.png</path></image>
     <image name="title" extra="true"><path>./title.png</path></image>
+  </view>
+  <view name="basic, detailed, video">
+    <image name="screen" extra="true"><path>./../_inc/art/ajustes/screen.jpg</path></image>
+  </view>
+  <view name="detailed, video">
+    <image name="md_image"><default>./../_inc/art/ajustes/screen.jpg</default></image>
+  </view>
+  <view name="basic, detailed, video">
+    <textlist name="gamelist"><selectorImagePath>./selector.png</selectorImagePath></textlist>
   </view>
   <view name="system">
     <image name="logo"><path>./wheel.png</path></image>

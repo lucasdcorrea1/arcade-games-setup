@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   getSystems: () => ipcRenderer.invoke('systems:get'),
-  setBrowseUrl: (url) => ipcRenderer.send('browse:url', url),
+  setBrowseUrl: (url, title) => ipcRenderer.send('browse:url', url, title),
   downloadGame: (pageUrl) => ipcRenderer.invoke('retrostic:download', pageUrl),
 
   // Batch auto-download (crawl a category, then download + send every game).
@@ -63,14 +63,29 @@ contextBridge.exposeInMainWorld('api', {
   onLibraryImage: (cb) => ipcRenderer.on('library:image', (_e, d) => cb(d)),
   restartES: (settings) => ipcRenderer.invoke('ssh:restartES', settings),
 
+  // "Liberar tudo": unlock every character in the games that support it.
+  unlocksList: (settings) => ipcRenderer.invoke('unlocks:list', settings),
+  unlocksApply: (settings, id) => ipcRenderer.invoke('unlocks:apply', { settings, id }),
+
   // Download lifecycle events coming from the embedded browser.
   onDownloadStarted: (cb) => ipcRenderer.on('download:started', (_e, d) => cb(d)),
   onDownloadProgress: (cb) => ipcRenderer.on('download:progress', (_e, d) => cb(d)),
+  onDownloadPreparing: (cb) => ipcRenderer.on('download:preparing', (_e, d) => cb(d)),
   onDownloadReady: (cb) => ipcRenderer.on('download:ready', (_e, d) => cb(d)),
   onDownloadFailed: (cb) => ipcRenderer.on('download:failed', (_e, d) => cb(d)),
 
   // Upload progress.
   onUploadProgress: (cb) => ipcRenderer.on('upload:progress', (_e, d) => cb(d)),
+
+  // "Turbine seu fliperama": the paid add-on (purchase code + install on the cabinet).
+  turbinarState: () => ipcRenderer.invoke('turbinar:state'),
+  turbinarActivate: (code) => ipcRenderer.invoke('turbinar:activate', code),
+  turbinarCheck: (settings) => ipcRenderer.invoke('turbinar:check', settings),
+  turbinarInstall: (settings) => ipcRenderer.invoke('turbinar:install', settings),
+  turbinarUninstall: (settings) => ipcRenderer.invoke('turbinar:uninstall', settings),
+  turbinarQr: (ip) => ipcRenderer.invoke('turbinar:qr', ip),
+  onTurbinarProgress: (cb) => ipcRenderer.on('turbinar:progress', (_e, d) => cb(d)),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
 
   // "Novo fliperama": prepare an SD card and set up a brand-new Raspberry Pi.
   setupPiInfo: (settings) => ipcRenderer.invoke('setup:piInfo', settings),

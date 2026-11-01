@@ -1,15 +1,16 @@
 {
   "name": "retropie-rom-sender",
-  "version": "1.1.0",
-  "description": "Desktop app to browse ROM sites, intercept downloads and send them to a RetroPie over SFTP into the correct emulator folder.",
+  "version": "1.2.0",
+  "description": "Arcade do Zero desktop app: sets up a RetroPie fliperama, sends your own games and installs the Turbinar add-on (QUEM VAI JOGAR?, placar and the phone app).",
   "main": "src/main.js",
   "author": "Lucas Correa",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
+    "dist": "node scripts/pack-turbinar.js && electron-builder --win",
     "dist:dir": "electron-builder --win --dir",
-    "make-icon": "node scripts/make-icon.js"
+    "make-icon": "node scripts/make-icon.js",
+    "pack:turbinar": "node scripts/pack-turbinar.js"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
@@ -32,6 +33,10 @@
       {
         "from": "resources/themes",
         "to": "themes"
+      },
+      {
+        "from": "resources/turbinar",
+        "to": "turbinar"
       }
     ],
     "win": {
