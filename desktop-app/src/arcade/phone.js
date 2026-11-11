@@ -146,6 +146,24 @@ async function handle(req, res) {
     } catch (err) { return json(res, 400, { error: err.message }); }
   }
 
+  // ENVIAR POR LINK: the phone sends a direct file link; the notebook downloads it into the library
+  // (the system from the file's extension, or the one picked), then unpacks / fetches the cover as an
+  // upload does. A web page is refused: the link must be the file itself.
+  if (u.pathname === '/api/fetch' && req.method === 'POST') {
+    let body = '';
+    for await (const c of req) { body += c; if (body.length > 8000) return json(res, 413, { error: 'grande demais' }); }
+    let d; try { d = JSON.parse(body || '{}'); } catch { return json(res, 400, { error: 'JSON inválido' }); }
+    let url; try { url = new URL(String(d.url || '').trim()); } catch { return json(res, 400, { error: 'Cole um link válido.' }); }
+    if (!/^https?:$/.test(url.protocol)) return json(res, 400, { error: 'Só links http(s).' });
+    const job = startFetch(url.toString(), String(d.system || '').replace(/[^a-z0-9_-]/gi, ''));
+    return json(res, 200, { id: job.id });
+  }
+  if (u.pathname === '/api/fetch' && req.method === 'GET') {
+    const j = jobs.get(u.searchParams.get('id') || '');
+    if (!u.searchParams.get('id')) return json(res, 200, { jobs: [...jobs.values()].reverse() });   // all of them: the page reloaded
+    return j ? json(res, 200, j) : json(res, 404, { error: 'não achei esse envio' });
+  }
+
   // TRABALHO: the office's tasks and notes (kept on the cabinet), managed from the phone
   if (u.pathname === '/api/work' && req.method === 'GET') {
     try {
@@ -166,6 +184,66 @@ async function handle(req, res) {
   }
 
   return json(res, 404, { error: 'not found' });
+}
+
+// --- downloads by link ------------------------------------------------------------------------
+const jobs = new Map();   // id -> { id, state: 'baixando' | 'preparando' | 'pronto' | 'erro', name, system, got, total, error }
+// unambiguous extensions -> system folder (.zip / .7z / .iso / .chd / .cue need the system picked)
+const EXT = { nes: 'nes', fds: 'nes', sfc: 'snes', smc: 'snes', z64: 'n64', n64: 'n64', v64: 'n64', gb: 'gb', gbc: 'gbc', gba: 'gba', nds: 'nds',
+  vb: 'virtualboy', md: 'megadrive', gen: 'megadrive', smd: 'megadrive', sms: 'mastersystem', gg: 'gamegear', '32x': 'sega32x', pce: 'pcengine',
+  a26: 'atari2600', a52: 'atari5200', a78: 'atari7800', lnx: 'atarilynx', ws: 'wonderswan', wsc: 'wonderswancolor', col: 'coleco', int: 'intellivision',
+  vec: 'vectrex', cso: 'psp', rvz: 'gamecube', gcm: 'gamecube', wbfs: 'wii', d64: 'c64', adf: 'amiga', pbp: 'psx' };
+function nameOf(res, url) {
+  const cd = res.headers.get('content-disposition') || '';
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+  let n = m ? m[1] : '';
+  try { n = decodeURIComponent(n); } catch { /* as it is */ }
+  if (!n) { try { n = decodeURIComponent(path.posix.basename(new URL(res.url || url).pathname)); } catch { n = ''; } }
+  return safeName(n);
+}
+function startFetch(url, system) {
+  const id = crypto.randomBytes(4).toString('hex');
+  const job = { id, state: 'baixando', name: '', system: system || '', got: 0, total: 0, error: '' };
+  jobs.set(id, job);
+  const tell = () => { try { if (deps.onFetch) deps.onFetch({ ...job }); } catch { /* window closed */ } };
+  let lastTell = 0;
+  tell();
+  (async () => {
+    let tmp = null;
+    try {
+      const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36' } });
+      if (!res.ok) throw new Error(`o site respondeu ${res.status}`);
+      const type = res.headers.get('content-type') || '';
+      if (/text\/html/i.test(type)) throw new Error('esse link é uma página, não o arquivo: copie o link do botão de download');
+      const name = nameOf(res, url);
+      if (!name) throw new Error('não consegui saber o nome do arquivo');
+      job.name = name;
+      const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1];
+      const folder = job.system || EXT[(ext || '').toLowerCase()];
+      if (!folder) throw new Error(`não sei de qual console é um .${ext || '?'}: escolha o sistema e mande de novo`);
+      job.system = folder;
+      job.total = res.headers.get('content-encoding') ? 0 : Number(res.headers.get('content-length')) || 0;   // compressed: the size is not the file's
+      const dir = path.join(deps.libraryRoot(deps.loadSettings()), folder);
+      fs.mkdirSync(dir, { recursive: true });
+      const dest = path.join(dir, name);
+      tmp = dest + '.part';
+      const out = fs.createWriteStream(tmp);
+      const { Readable } = require('stream');
+      const src = Readable.fromWeb(res.body);
+      src.on('data', (c) => { job.got += c.length; if (Date.now() - lastTell > 1000) { lastTell = Date.now(); tell(); } });
+      await new Promise((ok, bad) => { src.pipe(out); out.on('finish', ok); out.on('error', bad); src.on('error', bad); });
+      fs.renameSync(tmp, dest); tmp = null;
+      job.state = 'preparando'; tell();
+      await deps.afterUpload(dest, folder);   // unpack discs, fetch the cover
+      deps.onLibraryChange();
+      job.state = 'pronto'; tell();
+    } catch (err) {
+      job.state = 'erro'; job.error = err.message; tell();
+      if (tmp) { try { fs.unlinkSync(tmp); } catch { /* gone */ } }
+    }
+    setTimeout(() => jobs.delete(id), 3600000);
+  })();
+  return job;
 }
 
 function listenOn(p) {

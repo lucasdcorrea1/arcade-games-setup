@@ -110,7 +110,7 @@ function seekBack() {
       const ok = await view.webContents.executeJavaScript(`(() => { const v = document.querySelector('video');
         if (!v || !(v.duration > 0) || !location.hash.includes(${JSON.stringify(want.id)})) return false;
         if (${Number(want.time) || 0} > 3) v.currentTime = ${Number(want.time) || 0};
-        if (${want.playing ? 'false' : 'true'}) v.pause();
+        if (${want.playing ? 'false' : 'true'}) v.pause(); else if (v.paused) v.play().catch(() => {});
         return true; })()`, true);
       if (ok) { resumed = null; return; }
     } catch { /* still loading */ }
@@ -213,4 +213,13 @@ function register(onChange) {
   } catch { /* another app holds the key */ }
 }
 
-module.exports = { show, hide, key, type, volume, toggle, state, register, savePlace, pause: () => toggle('pause'), isStarted: () => started };
+// At the arcade's start: if something was playing when it closed, open YouTube hidden right away so
+// it goes on in the background (no need to visit MÚSICA first).
+function warm(win) {
+  const p = readPlace();
+  if (!p || !p.id || !p.playing || Date.now() - (p.at || 0) > 14 * 86400000) return;
+  make(win);
+  started = true;
+}
+
+module.exports = { warm, show, hide, key, type, volume, toggle, state, register, savePlace, pause: () => toggle('pause'), isStarted: () => started };

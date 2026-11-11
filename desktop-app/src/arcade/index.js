@@ -20,6 +20,50 @@ const github = require('./github');
 const music = require('./music');
 const claude = require('./claude');
 const study = require('./study');
+const led = require('./led');
+const ledScene = (...a) => led.scene(deps.loadSettings(), ...a).catch(() => false);   // the panel over the cabinet (via the Pi)
+const art = require('./led-art');
+// What the panel shows for each office page; the cabinet's own clock for the day pages, the games'
+// attract loop (the Goku) for the games screen. A notification goes up for a while, then the page again.
+let ledPage = null; let ledInfo = {}; let ledBack = null; let ledMusicTimer = null;
+function claudeLimits() {
+  try {
+    const u = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.claude', 'adz-usage.json'), 'utf8'));
+    if (Date.now() - u.at < 8 * 3600000) return { five_hour: u.five_hour, seven_day: u.seven_day };
+  } catch { /* no status line */ }
+  return null;
+}
+async function showPage(name, info) {
+  const st = deps.loadSettings();
+  const put = (sc, key) => led.gif(st, art.encodeGif(sc), key);
+  clearInterval(ledMusicTimer); ledMusicTimer = null;
+  if (name === 'music') {
+    const go = async () => { const m = await music.state().catch(() => ({})); return put(art.music(m.title || (m.playing ? 'TOCANDO' : 'PAUSADO')), 'music:' + (m.title || '') + m.playing); };
+    ledMusicTimer = setInterval(() => { if (ledPage === 'music' && !ledBack) go(); }, 20000);   // a new song: a new title
+    return go();
+  }
+  if (name === 'github') { const c = await github.commits(st).catch(() => null); return put(art.github(c), 'github:' + (c ? c.today + '/' + c.week : '')); }
+  if (name === 'claude') { let lim = claudeLimits(); if (!lim) { const p = await office.page(st, 'claude').catch(() => null); lim = p && p.pc && p.pc.limits; } return put(art.claude(lim), 'claude:' + JSON.stringify(lim)); }
+  if (name === 'news') return put(art.news(info.title), 'news:' + info.title);
+  if (name === 'study') return put(art.study(info.pct, info.next), 'study:' + info.pct + info.next);
+  if (name === 'stocks') return put(art.stocks(info.name, info.pct), 'stocks:' + info.pct);
+  if (name === 'menu') return ledScene('menu');
+  return ledScene('office');   // ESCRITÓRIO, CASA, RENDA FIXA...: the cabinet's clock and what comes next
+}
+const LED_PAGES = new Set(['office', 'study', 'claude', 'github', 'news', 'stocks', 'rates', 'house', 'music', 'menu']);
+function ledShowPage(name, info) {
+  if (!LED_PAGES.has(name)) return;
+  ledPage = name; ledInfo = info || {};
+  if (ledBack) return;   // a notification is up: the page comes after it
+  showPage(name, ledInfo).catch(() => {});
+}
+function ledNotice(kind, msg) {
+  const sc = art.notice(String(kind), String(msg || '').slice(0, 80));
+  led.gif(deps.loadSettings(), art.encodeGif(sc)).catch(() => {});
+  clearTimeout(ledBack);
+  const ms = sc.frames.length * sc.ms * 2 + 6000;   // twice through, then back to the page
+  ledBack = setTimeout(() => { ledBack = null; if (ledPage) showPage(ledPage, ledInfo).catch(() => {}); }, ms);
+}
 const volume = require('./volume');
 let lastConnected = []; // gamepads the arcade window saw last (used when the phone starts a game)
 
@@ -185,6 +229,7 @@ async function play(id, connected) {
   try {
     const game = findGame(id);
     if (!game) return { ok: false, error: 'Não achei esse jogo no disco.' };
+    ledScene('game', game.folder, require('path').basename(String(game.rom || game.file || game.name || '')));   // the intro on the panel
     if (game.source === 'retrobat') {
       // RetroBat's own launcher picks the emulator, controls and hotkeys it uses for this game.
       const dir = retrobat.find(deps.loadSettings());
@@ -251,6 +296,7 @@ function watch(child, id, game) {
     toFront();
     const failed = err || (seconds < 4 && code !== 0) || (game.source === 'retrobat' && seconds < 8);
     const rbReason = game.source === 'retrobat' && failed ? retrobat.lastError(retrobat.find(deps.loadSettings()), started) : null;
+    ledScene('end');   // QUEM GANHOU? on the panel, then its menu
     send('arcade:ended', {
       id,
       seconds,
@@ -293,6 +339,8 @@ function createWindow() {
   win.once('ready-to-show', () => toFront());
   win.on('closed', () => { win = null; });
   music.register((st) => send('music:changed', st));
+  setTimeout(() => { if (win && !win.isDestroyed()) music.warm(win); }, 1500);   // the music goes on by itself
+  ledShowPage('menu', {});   // the panel: the attract loop (the office, when it opens, asks for its clock)
   volume.warm();
   win.on('closed', () => volume.stop());
   win.loadFile(path.join(__dirname, 'ui', 'arcade.html'));
@@ -349,6 +397,9 @@ function registerIpc() {
     if (!limits && cl.status === 'fulfilled' && cl.value && cl.value.pc) limits = cl.value.pc.limits || null;
     return { commits: c.status === 'fulfilled' ? c.value : null, claude: limits ? { limits } : null };
   });
+  ipcMain.handle('led:scene', (_e, name) => (['menu', 'office'].includes(name) ? ledShowPage(name, {}) : false));
+  ipcMain.handle('led:page', (_e, name, info) => ledShowPage(String(name), info && typeof info === 'object' ? { title: String(info.title || '').slice(0, 120), next: String(info.next || '').slice(0, 120), name: String(info.name || '').slice(0, 12), pct: Number(info.pct) || 0 } : {}));
+  ipcMain.handle('led:notice', (_e, kind, msg) => ledNotice(kind, msg));
   ipcMain.handle('study:load', () => study.load(deps.loadSettings()));
   ipcMain.handle('study:toggle', (_e, id) => study.toggle(deps.loadSettings(), String(id)));
   ipcMain.handle('office:translate', (_e, texts) => github.translate(texts));
@@ -491,7 +542,8 @@ function init(d) {
     coverFile: (id) => { try { const g = findGame(id); return g && g.cover; } catch { return null; } },
     afterUpload: deps.afterUpload || (async () => {}),
     queue: deps.queue || null,
-    onLibraryChange: () => send('arcade:refresh', {})
+    onLibraryChange: () => send('arcade:refresh', {}),
+    onFetch: (job) => send('arcade:fetch', job)
   }).catch(() => { /* phone page is optional */ });
 }
 

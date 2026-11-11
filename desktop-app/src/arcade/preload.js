@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('arcade', {
   },
   volume: (way) => ipcRenderer.invoke('arcade:volume', way),
   topStats: () => ipcRenderer.invoke('top:stats'),
+  led: (scene) => ipcRenderer.invoke('led:scene', scene),
+  ledPage: (name, info) => ipcRenderer.invoke('led:page', name, info),
+  ledNotice: (kind, msg) => ipcRenderer.invoke('led:notice', kind, msg),
+  onFetch: (cb) => ipcRenderer.on('arcade:fetch', (_e, j) => cb(j)),
   claude: {
     list: () => ipcRenderer.invoke('claude:list'),
     read: (id) => ipcRenderer.invoke('claude:read', id)

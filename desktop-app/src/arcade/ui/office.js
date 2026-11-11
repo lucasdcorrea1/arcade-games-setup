@@ -103,6 +103,7 @@
       const extra = EXTRA.includes(name);
       const [s, p] = await Promise.all([window.arcade.office.board(), extra ? window.arcade.office.page(name) : null]);
       snap = s; error = '';
+      lateReminders(s);
       if (extra) pageData[name] = p;
       if (name === 'news' && p) { markNew('news', newsKeys(p)); updatedAt.news = Date.now(); }
       if ((name === 'office' || name === 'house') && s && s.board) loadDaily(s.board);
@@ -398,7 +399,7 @@
       ghData[name] = d; updatedAt['gh:' + name] = Date.now();
       if (name === 'notifications' && Array.isArray(d)) {
         const n = markNew('gh:notifications', d.map((x) => `n:${x.repo}:${x.title}`));
-        if (n && live) window.arcadeToast(`GitHub: ${n} ${n === 1 ? 'notificação nova' : 'notificações novas'}`);
+        if (n && live) { window.arcadeToast(`GitHub: ${n} ${n === 1 ? 'notificação nova' : 'notificações novas'}`); window.arcade.ledNotice('github', `${n} ${n === 1 ? 'notificacao nova' : 'notificacoes novas'}: ${d[0] ? d[0].title : ''}`); }
       }
     } catch (e) {
       if (!ghData[name] || ghData[name].error) ghData[name] = { error: clean(e) };   // keep the last list on a hiccup
@@ -593,11 +594,14 @@
   }
 
   // CLAUDE: the Claude Code conversations of this PC, live, and a prompt typed here
+  const clWaitSeen = new Set();
   let clList = null; let clChat = null; let clTimer = null;
   async function clLoad() {
     const before = clList ? clList.map((x) => x.id + x.live + x.waiting).join() : null;
     try { clList = await window.arcade.claude.list(); } catch { clList = []; }
     const changed = before !== clList.map((x) => x.id + x.live + x.waiting).join();
+    if (before !== null) for (const x of clList) if (x.waiting && !clWaitSeen.has(x.id)) { clWaitSeen.add(x.id); window.arcade.ledNotice('claude', `esperando voce: ${x.project}`); }
+    for (const x of clList) if (!x.waiting) clWaitSeen.delete(x.id);
     const r = rows[sel]; const id = (r && r.session) || (clList[0] && clList[0].id);
     if (id) { try { clChat = await window.arcade.claude.read(id); } catch { clChat = null; } }
     if (PAGES[page][0] === 'claude') { if (changed) render(); else drawChat(); }
@@ -660,18 +664,54 @@
   function newsPage() {
     const st = ((pageData.news || {}).stories || []).slice(0, 40);
     if (!st.length) return loading('news', 'NOTÍCIAS', '#2ee6ff', pageData.news, 'Ainda sem notícias no fliperama.');
-    const list = st.map((n) => {
+    // A BOARD, not a list: everything at a glance. The top story big, the latest under it, then one
+    // column per topic (its first story with the picture, the others as headlines). A opens the story
+    // full screen (reading mode); B comes back.
+    const hint = 'A lê · ↔ colunas';
+    const hoursAgo = (n) => (Date.now() - (typeof n.when === 'number' ? n.when * 1000 : new Date(n.when).getTime())) / 3600000;
+    const titleOf = (n) => { const x = storyCache[n.id]; return x ? x.title : n.title; };
+    const tag = (n) => (fresh.has('s:' + n.id) ? '<b class="of-new">NOVO</b>' : '');
+    const head = (n, withTopic) => row(`${withTopic ? `<small class="nh-topic" style="color:${TCOL[n.topic] || '#2ee6ff'}">${esc(TOPIC[n.topic] || '')}</small>` : ''}<span>${tag(n)}${esc(titleOf(n))}</span><em>${esc(n.name)} · ${ago(n.when)}</em>`,
+      'nh' + (fresh.has('s:' + n.id) ? ' is-new' : ''), { story: n, hint });
+    const pic = (n, big) => {
       const x = storyCache[n.id];
-      const isNew = fresh.has('s:' + n.id);
-      return row(`<img class="of-thumb" data-thumb="${esc(n.id)}" ${x && x.image ? `src="${x.image}"` : ''} alt=""><div>`
-        + `<small class="of-topic" style="--c:${TCOL[n.topic] || '#2ee6ff'}">${esc(TOPIC[n.topic] || '')}${isNew ? '<b class="of-new">NOVO</b>' : ''}</small>`
-        + `<span>${esc(x ? x.title : n.title)}</span><em>${esc(n.name)} · ${ago(n.when)}</em></div>`,
-        'news' + (isNew ? ' is-new' : ''), { story: n, hint: TOPIC[n.topic] || '' });
-    }).join('');
-    st.slice(0, 8).forEach((n) => loadStory(n.id, true));   // the first pictures right away
-    return `<div class="of-grid wide">
-      <div class="of-col">${card('list', `NOTÍCIAS ${liveTag('news')}`, '#2ee6ff', list, 'tall')}</div>
-      <div class="of-col">${card('story', 'MATÉRIA', '#2ee6ff', '<div id="ofStory" class="of-story"></div>', 'tall')}</div>
+      return row(`<div class="nb-img" style="--c:${TCOL[n.topic] || '#2ee6ff'}">${x && x.image ? `<img data-thumb="${esc(n.id)}" src="${x.image}" alt="">` : `<img data-thumb="${esc(n.id)}" alt="">`}
+        <div class="nb-cap"><small style="color:${TCOL[n.topic] || '#2ee6ff'}">${esc(TOPIC[n.topic] || '')}${tag(n)}</small><b>${esc(titleOf(n))}</b><em>${esc(n.name)} · ${ago(n.when)}</em></div></div>`,
+        'npic' + (big ? ' big' : ''), { story: n, hint });
+    };
+    const top = st.find((n) => storyCache[n.id] && storyCache[n.id].image) || st[0];
+    const used = new Set([top.id]);
+    const latest = st.filter((n) => n.id !== top.id).slice(0, 5);
+    latest.forEach((n) => used.add(n.id));
+    let topics = Object.keys(TOPIC).filter((t) => t !== 'all')
+      .map((t) => [t, st.filter((n) => n.topic === t && !used.has(n.id)).slice(0, 6)])
+      .filter(([, l]) => l.length);
+    // topics with only one or two stories share a column (no half-empty columns)
+    const small = topics.filter(([, l]) => l.length <= 2);
+    if (small.length > 1) {
+      topics = topics.filter(([, l]) => l.length > 2);
+      topics.push(['more', small.flatMap(([, l]) => l).sort((a, b) => hoursAgo(a) - hoursAgo(b))]);
+    }
+    // "o que está pegando": how much came out in the last hours, per topic
+    const hours = (n) => (Date.now() - (typeof n.when === 'number' ? n.when * 1000 : new Date(n.when).getTime())) / 3600000;
+    const recent = st.filter((n) => hours(n) <= 6);
+    const buzz = Object.keys(TOPIC).filter((t) => t !== 'all').map((t) => [t, recent.filter((n) => n.topic === t).length]).filter(([, c]) => c)
+      .sort((a, b) => b[1] - a[1]);
+    const strip = `<div class="nb-buzz"><span class="nb-buzz-h">🔥 O QUE ESTÁ PEGANDO</span>${buzz.length
+      ? buzz.map(([t, c]) => `<span style="--c:${TCOL[t]}"><b>${c}</b> ${esc(TOPIC[t])}</span>`).join('') + `<em>${recent.length} notícias nas últimas 6 h</em>`
+      : '<em>calmo nas últimas horas</em>'}${liveTag('news')}</div>`;
+
+    let cols = `<div class="of-col nb-lead">${card('top', 'EM DESTAQUE', '#2ee6ff', pic(top, true) + latest.map(head).join(''), 'tall')}</div>`;
+    for (const [t, l] of topics) {
+      const name = t === 'more' ? [...new Set(l.map((n) => TOPIC[n.topic]))].join(' · ') : TOPIC[t];
+      // in the shared column each headline says its topic
+      const rowsHtml = t === 'more' ? l.map((n) => head(n, true)).join('') : pic(l[0]) + l.slice(1).map((n) => head(n)).join('');
+      cols += `<div class="of-col">${card('t-' + t, `${esc(name)} <small>${l.length}</small>`, t === 'more' ? '#ff9f43' : TCOL[t], rowsHtml, 'tall')}</div>`;
+    }
+    // the pictures of what is on the board
+    [top, ...topics.filter(([t]) => t !== 'more').map(([, l]) => l[0]), ...latest].forEach((n) => loadStory(n.id, true));
+    return `${strip}<div class="of-grid wide nb-board" style="--ncols:${topics.length}">${cols}
+      <div class="of-col nb-reader">${card('story', 'MATÉRIA', '#2ee6ff', '<div id="ofStory" class="of-story"></div>', 'tall')}</div>
     </div>`;
   }
   function showStory() {
@@ -790,6 +830,29 @@
   setInterval(() => { if (!$('office').hidden && PAGES[page][0] !== 'music') musicState(); }, 4000);
   window.arcade.music.onChanged((st) => { music = st || music; musicState(); });
 
+  // the LED panel over the cabinet: this page's scene (sent when the page or what it shows changes)
+  let ledKey = '';
+  function ledFor(name) {
+    const info = {};
+    if (name === 'news') { const st = ((pageData.news || {}).stories || [])[0]; if (st) info.title = (storyCache[st.id] && storyCache[st.id].title) || st.title; }
+    if (name === 'study' && study && study.tracks) { const all = study.tracks[0].modules.flatMap((m) => m.steps); const nx = all.find((x) => !x.done); info.pct = Math.round(all.filter((x) => x.done).length / all.length * 100); info.next = nx ? nx.text : ''; }
+    if (name === 'stocks' && pageData.stocks) { const ib = pageData.stocks.ibov || {}; info.name = 'IBOV'; info.pct = ib.pct || 0; }
+    const key = name + JSON.stringify(info);
+    if (key === ledKey) return;
+    ledKey = key;
+    window.arcade.ledPage(name, info);
+  }
+  // a reminder that came due: a notification on the panel, once
+  const lateSeen = new Set();
+  function lateReminders(s) {
+    for (const r of ((s && s.board && s.board.reminders) || [])) {
+      if (!r.late || lateSeen.has(r.id)) continue;
+      lateSeen.add(r.id);
+      window.arcade.ledNotice('reminder', r.text);
+      return;   // one at a time
+    }
+  }
+
   function render() {
     const root = $('office');
     if (!root || root.hidden) return;
@@ -805,6 +868,7 @@
       body = header(b) + alertsBar(b) + draw(b);
     }
     $('office').dataset.page = PAGES[page][0];
+    ledFor(PAGES[page][0]);
     // the refresh every 30 s redraws the page: keep where the story and the list were scrolled to
     const old = document.getElementById('ofStory') || document.getElementById('ofReadme');
     const keep = old && { id: old.dataset.id, story: old.closest('.of-card').scrollTop };
@@ -833,7 +897,8 @@
     el.classList.add('sel');
     el.scrollIntoView({ block: 'nearest' });
     const r = rows[sel];
-    $('officeHint').textContent = (r && r.hint) || '';
+    const readable = r && !r.a && (PAGES[page][0] === 'news' || PAGES[page][0] === 'github') && (r.story || r.repo || r.note);
+    $('officeHint').textContent = [(r && r.hint) || '', readable ? 'A lê em tela cheia' : ''].filter(Boolean).join(' · ');
     if (r && PAGES[page][0] === 'github') fresh.delete(rowKey(r));
     showStory();
     showReadme();
@@ -848,7 +913,25 @@
   function colOf(i) {
     const el = rowEl(i);
     const col = el && el.closest('.of-col');
-    return col ? [...col.parentNode.children].indexOf(col) : 0;
+    return col ? [...col.parentNode.children].indexOf(col) : -1;   // -1: a row outside the columns (the AGORA buttons)
+  }
+  const xOf = (i) => { const el = rowEl(i); return el ? el.getBoundingClientRect().left : 0; };
+  // up / down stay in the column; past its top, the AGORA buttons (Em call · Foco · Música)
+  function moveUpDown(dir) {
+    const here = colOf(sel);
+    if (here < 0) {   // on the buttons: down goes into the column below, nearest by position
+      if (dir < 0) return;
+      let best = -1; let bd = Infinity;
+      for (let i = 0; i < rows.length; i++) { if (colOf(i) < 0) continue; const top = rowEl(i).getBoundingClientRect().top; const d = Math.abs(xOf(i) - xOf(sel)) + top / 10; if (d < bd) { bd = d; best = i; } }
+      if (best >= 0) { sel = best; paint(); }
+      return;
+    }
+    for (let i = sel + dir; i >= 0 && i < rows.length; i += dir) if (colOf(i) === here) { sel = i; return paint(); }
+    if (dir < 0) {   // above the column: the button nearest to it
+      let best = -1; let bd = Infinity;
+      for (let i = 0; i < rows.length; i++) if (colOf(i) < 0) { const d = Math.abs(xOf(i) - xOf(sel)); if (d < bd) { bd = d; best = i; } }
+      if (best >= 0) { sel = best; paint(); }
+    }
   }
   function moveSide(dir, src) {
     if (document.querySelector('#officeBody .of-tiles')) {   // JOGOS: a row of covers
@@ -858,10 +941,17 @@
       return paint();
     }
     const here = colOf(sel);
+    if (here < 0) {   // the AGORA buttons: side by side
+      const n = sel + dir;
+      if (rows[n] && colOf(n) < 0) { sel = n; return paint(); }
+      if (src !== 'repeat') edgeTurn(dir);
+      return;
+    }
     const y = rowEl(sel) ? rowEl(sel).getBoundingClientRect().top : 0;
     let best = -1; let bestCol = null; let bestDy = Infinity;
     for (let i = 0; i < rows.length; i++) {
       const c = colOf(i);
+      if (c < 0) continue;
       if (dir > 0 ? c <= here : c >= here) continue;
       if (bestCol !== null && (dir > 0 ? c > bestCol : c < bestCol)) continue;   // only the nearest column
       const dy = Math.abs(rowEl(i).getBoundingClientRect().top - y);
@@ -877,6 +967,7 @@
     if (k >= 0) turn(k - page);
   }
   function turn(dir) {
+    if (reading) setReading(false);
     musicFull = false;
     const was = page;
     page = (page + dir + PAGES.length) % PAGES.length;
@@ -930,14 +1021,32 @@
     if (el) el.scrollBy({ top: (a === 'p2down' ? 1 : -1) * window.innerHeight * 0.12, behavior: 'smooth' });
   }
 
-  // past the last column: a second push turns the page (one push only shows the way)
-  let edgeAt = 0; let edgeDir = 0;
-  function edgeTurn(dir) {
-    const now = Date.now();
-    if (edgeDir === dir && now - edgeAt < 1200) { edgeDir = 0; return turn(dir); }
-    edgeDir = dir; edgeAt = now;
-    const k = (page + dir + PAGES.length) % PAGES.length;
-    $('officeHint').textContent = `${dir > 0 ? '→' : '←'} de novo vai para ${PAGES[k][1]} (ou L / R)`;
+  // past the last column a fresh push turns the page (a held stick stops at the edge)
+  function edgeTurn(dir) { turn(dir); }
+
+
+  // MODO LEITURA (NOTÍCIAS / GITHUB): the story or the README takes the whole screen, big type in a
+  // reading column. The stick scrolls; left / right the previous / next one; A or B back to the list.
+  let reading = false;
+  function readBox() { const b = document.getElementById('ofStory') || document.getElementById('ofReadme'); return b && b.closest('.of-card'); }
+  function setReading(on) {
+    reading = on;
+    $('office').classList.toggle('reading', on);
+    $('officeHint').textContent = on ? 'manche rola · ← → anterior / próxima · B volta para a lista' : ((rows[sel] && rows[sel].hint) || '');
+    const c = readBox(); if (c) c.scrollTop = 0;
+  }
+  function readAct(a) {
+    if (a.startsWith('p2')) a = a.slice(2);
+    const c = readBox();
+    if (a === 'up' || a === 'down') { if (c) c.scrollBy({ top: (a === 'down' ? 1 : -1) * c.clientHeight * 0.45, behavior: 'smooth' }); return; }
+    if (a === 'left' || a === 'right') {
+      const n = sel + (a === 'right' ? 1 : -1);
+      if (rows[n] && (rows[n].story || rows[n].repo || rows[n].note)) { sel = n; paint(); const cc = readBox(); if (cc) cc.scrollTop = 0; }
+      return;
+    }
+    if (a === 'b' || a === 'a') return setReading(false);
+    if (a === 'start') { setReading(false); return close(); }
+    if (a === 'l' || a === 'r') { setReading(false); return turn(a === 'l' ? -1 : 1); }
   }
 
   function act(a, src) {
@@ -950,13 +1059,14 @@
       if (a === 'y') { musicFull = !musicFull; render(); return; }
       if (a === 'x') return turn(1);
     }
+    if (reading) return readAct(a);
+    if ((a === 'a') && (PAGES[page][0] === 'news' || PAGES[page][0] === 'github') && rows[sel] && (rows[sel].story || rows[sel].repo || rows[sel].note) && !rows[sel].a) return setReading(true);
     if (a.startsWith('p2')) return scrollWith(a);
     if (a === 'start' || (a === 'b' && !snap)) return close();
     if (a === 'l' || a === 'select') return turn(a === 'l' ? -1 : 1);
     if (a === 'r') return turn(1);
     if (a === 'x' && snap) return toggleFocus();
-    if (a === 'up') { if (sel > 0) sel--; return paint(); }
-    if (a === 'down') { if (sel < rows.length - 1) sel++; return paint(); }
+    if (a === 'up' || a === 'down') return moveUpDown(a === 'up' ? -1 : 1);
     if (a === 'left') return moveSide(-1, src);
     if (a === 'right') return moveSide(1, src);
     if (PAGES[page][0] === 'github' && (a === 'y' || (a === 'b' && !(rows[sel] && rows[sel].b)))) return ghTurn(a === 'y' ? 1 : -1);
@@ -986,6 +1096,7 @@
   }
 
   function close() {
+    ledKey = '';
     window.arcade.music.hide();
     clearInterval(timer); clearInterval(clockTimer); clearInterval(liveTimer);
     $('office').hidden = true;
@@ -1009,6 +1120,8 @@
   document.addEventListener('click', (e) => {
     if ($('office').hidden) return;
     if (e.target.closest('[data-togames]')) return close();
+    if (reading && !e.target.closest('#officeTabs')) return setReading(false);   // a click anywhere: back to the list
+    if (e.target.closest('#ofStory, #ofReadme')) return setReading(true);
     const te = e.target.closest('[data-tedit]'); if (te) return editTask(te.dataset.tedit);
     const td = e.target.closest('[data-tdel]'); if (td) return delTask(td.dataset.tdel);
     if (e.target.closest('.of-input')) return;

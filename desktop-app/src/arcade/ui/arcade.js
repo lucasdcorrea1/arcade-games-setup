@@ -739,7 +739,8 @@ function openOffice() {
   overlay = 'office';
   input.p2 = data && data.sides ? data.sides.p2 : null;   // START → Lados do painel
   input.p2Apart = true;
-  window.Office.open(() => { overlay = null; input.p2Apart = false; officeLeft = Date.now(); });
+  window.arcade.led('office');   // the panel: the office's clock
+  window.Office.open(() => { overlay = null; input.p2Apart = false; officeLeft = Date.now(); window.arcade.led('menu'); });
 }
 // the office's JOGOS page: find a cabinet game in the notebook's library, and play it
 window.arcadeFindGame = (system, file) => {
@@ -800,3 +801,24 @@ async function topStats() {
 }
 topStats();
 setInterval(topStats, 5 * 60000);
+
+// --- downloads sent by link from the phone: a quiet pill at the top while they run, a toast at the end
+const fetches = new Map();
+function drawFetches() {
+  let el = document.getElementById('fetchPill');
+  if (!el) { el = document.createElement('div'); el.id = 'fetchPill'; el.className = 'fetch-pill'; document.body.appendChild(el); }
+  const live = [...fetches.values()].filter((j) => j.state === 'baixando' || j.state === 'preparando');
+  el.hidden = !live.length;
+  el.innerHTML = live.map((j) => {
+    const pct = j.total ? Math.min(100, Math.round(j.got / j.total * 100)) : null;
+    const what = j.state === 'preparando' ? 'preparando' : pct !== null ? pct + '%' : (j.got / 1048576).toFixed(0) + ' MB';
+    return `<div><span>BAIXANDO</span><b>${escapeHtml(j.name || '…')}</b><em>${what}</em><i style="width:${pct ?? 30}%"></i></div>`;
+  }).join('');
+}
+window.arcade.onFetch((j) => {
+  const was = fetches.get(j.id);
+  fetches.set(j.id, j);
+  if (j.state === 'pronto' && (!was || was.state !== 'pronto')) { toast(`Novo jogo pronto: ${j.name} (${j.system})`); window.arcade.ledNotice('download', `${j.name.replace(/.[a-z0-9]+$/i, '')} pronto`); }
+  if (j.state === 'erro' && (!was || was.state !== 'erro')) toast(`Download falhou: ${j.error}`, true);
+  drawFetches();
+});

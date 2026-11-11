@@ -93,6 +93,13 @@
 
   <main id="tabSend" hidden>
     <div class="step">
+      <h3><span>⚡</span> Mandar pelo link</h3>
+      <p>No site, segure o botão de download e escolha <b>Copiar link</b>. Cole aqui: o notebook baixa, coloca no console certo e deixa pronto para jogar.</p>
+      <div class="add"><input id="lUrl" type="url" placeholder="https://…/jogo.zip" autocomplete="off" enterkeyhint="send"><button id="lGo">Enviar</button></div>
+      <select id="lSys"><option value="">Console: automático (pela extensão)</option></select>
+      <ul class="files" id="lJobs"></ul>
+    </div>
+    <div class="step">
       <h3><span>1</span> Baixe o jogo aqui no celular</h3>
       <p>Abra o site, escolha o jogo e toque em Download. O arquivo fica nos Downloads do celular.</p>
       <a class="btn ghost" href="https://romspure.cc/roms/" target="_blank" rel="noopener">Abrir o RomsPure</a>
@@ -196,6 +203,7 @@ function renderGrid() {
 
 function renderSystems() {
   if ($('sys').options.length) return;
+  $('lSys').innerHTML += data.uploadSystems.map((s) => `<option value="${esc(s.folder)}">${esc(s.label)}</option>`).join('');
   $('sys').innerHTML = data.uploadSystems.map((s) => `<option value="${esc(s.folder)}">${esc(s.label)}</option>`).join('');
   try { const last = localStorage.getItem('adz-sys'); if (last) $('sys').value = last; } catch { /* ignore */ }
 }
@@ -348,6 +356,45 @@ $('qAdd').addEventListener('click', () => { const url = $('qUrl').value.trim(); 
 $('qUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('qAdd').click(); });
 $('qList').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (!b) return; queuePost({ action: b.dataset.q, id: b.closest('[data-id]').dataset.id }); });
 setInterval(() => { if (!$('tabQueue').hidden) loadQueue(); }, 3000);
+
+// --- ENVIAR POR LINK: the notebook downloads the file itself; the phone only follows along
+// the list comes from the notebook (it keeps every download for an hour), so a reload loses nothing
+function jobLine(x) {
+  const pct = x.total ? Math.min(100, Math.round(x.got / x.total * 100)) : 0;
+  const mb = (x.got / 1048576).toFixed(1);
+  const text = x.state === 'erro' ? `Não deu: ${x.error}` : x.state === 'pronto' ? `✓ ${x.name} pronto no fliperama (${x.system})`
+    : x.state === 'preparando' ? `Preparando ${x.name}…` : `Baixando ${x.name || ''} · ${x.total ? pct + '%' : mb + ' MB'}`;
+  return `<li class="${x.state === 'erro' ? 'err' : x.state === 'pronto' ? 'ok' : ''}"><span>${esc(text)}</span><div class="bar"><i style="width:${x.state === 'pronto' ? 100 : pct}%"></i></div></li>`;
+}
+let jobsTimer = null; let readyBefore = -1;
+async function loadJobs() {
+  clearTimeout(jobsTimer);
+  try {
+    const { jobs } = await (await fetch(api('/api/fetch'))).json();
+    const list = jobs || [];
+    $('lJobs').innerHTML = list.map(jobLine).join('');
+    const ready = list.filter((x) => x.state === 'pronto').length;
+    if (readyBefore >= 0 && ready > readyBefore) load();   // a new game: the list of games too
+    readyBefore = ready;
+    if (list.some((x) => x.state === 'baixando' || x.state === 'preparando')) jobsTimer = setTimeout(loadJobs, 1000);
+  } catch { jobsTimer = setTimeout(loadJobs, 4000); }
+}
+async function sendLink(url) {
+  url = String(url || '').trim();
+  if (!url) return;
+  try {
+    const r = await fetch(api('/api/fetch'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, system: $('lSys').value }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || 'erro');
+    $('lUrl').value = '';
+    toast('Enviado: o notebook está baixando');
+  } catch (e) { toast(e.message, true); }
+  loadJobs();
+}
+loadJobs();
+$('lGo').onclick = () => sendLink($('lUrl').value);
+$('lUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendLink($('lUrl').value); });
+// a link handed to the page (…/?k=…&url=…), e.g. from a phone shortcut: it goes right away
+(() => { const u = new URLSearchParams(location.search).get('url'); if (u) { document.querySelector('nav [data-tab="Send"]').click(); sendLink(u); history.replaceState(null, '', location.pathname + '?k=' + encodeURIComponent(K || '')); } })();
 </script>
 </body>
 </html>
