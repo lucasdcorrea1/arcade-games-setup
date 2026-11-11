@@ -18,8 +18,13 @@ const bundledTheme = require('./bundled-theme');
 const unlocks = require('./unlocks');
 const license = require('./license');
 const turbinar = require('./turbinar');
+const arcade = require('./arcade');
+const place = require('./arcade/place');
 
+// A separate settings folder (tests, a second profile): ADZ_USER_DATA=<dir>
+if (process.env.ADZ_USER_DATA) app.setPath('userData', process.env.ADZ_USER_DATA);
 const APP_ID = 'com.lucascorrea.retropieromsender';
+const GOT_LOCK = app.requestSingleInstanceLock();
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const BROWSE_PARTITION = 'persist:browse';
 
@@ -63,7 +68,9 @@ const DEFAULT_SETTINGS = {
   // Batch downloads: skip games already present (locally or on the Pi).
   skipExisting: true,
   // How many games the batch crawler may queue at most (safety cap).
-  batchMaxPages: 60
+  batchMaxPages: 60,
+  // Where downloaded games go: 'notebook' (this PC's arcade), 'pi' (the RetroPie cabinet) or 'both'
+  target: 'notebook'
 };
 
 function loadSettings() {
@@ -76,7 +83,8 @@ function loadSettings() {
 }
 
 function saveSettings(settings) {
-  const merged = { ...DEFAULT_SETTINGS, ...settings };
+  // merge over what is on disk: the panel and the arcade each save only the keys they know
+  const merged = { ...DEFAULT_SETTINGS, ...loadSettings(), ...settings };
   fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
   return merged;
@@ -890,6 +898,11 @@ const LIBRETRO_SYSTEM = {
   dreamcast: 'Sega - Dreamcast',
   psx: 'Sony - PlayStation',
   psp: 'Sony - PlayStation Portable',
+  ps2: 'Sony - PlayStation 2',
+  ps3: 'Sony - PlayStation 3',
+  gamecube: 'Nintendo - GameCube',
+  gc: 'Nintendo - GameCube',
+  wii: 'Nintendo - Wii',
   neogeo: 'SNK - Neo Geo',
   pcengine: 'NEC - PC Engine - TurboGrafx 16',
   atari2600: 'Atari - 2600',
@@ -960,11 +973,55 @@ async function findBoxartUrl(folder, romBase, title) {
   return null;
 }
 
+// Fallback when libretro has no box art (PS3 and newer consoles): the cover in the infobox of the
+// game's English Wikipedia article. Saved as <destDir>/images/<romBase>.<ext>; returns the path or null.
+const WIKI_UA = 'RetroCoverFetcher/1.0 (desktop emulator front-end)';
+async function wikipediaCover(destDir, romBase, title) {
+  const api = 'https://en.wikipedia.org/w/api.php';
+  const get = async (params) => {
+    const url = `${api}?${new URLSearchParams({ format: 'json', ...params })}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await fetch(url, { headers: { 'User-Agent': WIKI_UA } });
+      if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 3000 * (attempt + 1))); continue; } // too fast: wait
+      return r.ok ? r.json() : null;
+    }
+    return null;
+  };
+  try {
+    const name = (title || romBase || '').replace(/\s*[([].*$/, '').trim();
+    if (!name) return null;
+    const found = await get({ action: 'query', list: 'search', srsearch: `${name} video game`, srlimit: '3' });
+    const norm = (s) => s.toLowerCase().replace(/\s*\(.*?\)/g, '').replace(/[^a-z0-9]+/g, ' ')
+      .split(' ').filter((w) => w && !['the', 'video', 'game', 'videogame'].includes(w)).join(' ');
+    for (const hit of (found && found.query && found.query.search) || []) {
+      // only the game's own article (a page about the series shows its logo or another game's cover)
+      const a = norm(hit.title), b = norm(name);
+      if (!b || !a.includes(b)) continue;
+      const page = await get({ action: 'parse', prop: 'wikitext', section: '0', redirects: '1', page: hit.title });
+      const text = page && page.parse && page.parse.wikitext && page.parse.wikitext['*'];
+      const m = text && /\|\s*image\s*=\s*(?:\[\[)?(?:File:|Image:)?([^|\]\n<{]+\.(?:jpe?g|png|webp))/i.exec(text);
+      if (!m) continue;
+      const info = await get({ action: 'query', prop: 'imageinfo', iiprop: 'url', titles: `File:${m[1].trim()}` });
+      const pages = (info && info.query && info.query.pages) || {};
+      const url = Object.values(pages).map((p) => p.imageinfo && p.imageinfo[0] && p.imageinfo[0].url).find(Boolean);
+      if (!url) continue;
+      const img = await fetch(url, { headers: { 'User-Agent': WIKI_UA } });
+      if (!img.ok) continue;
+      const ext = (/\.(jpe?g|png|webp)$/i.exec(m[1].trim()) || ['.jpg'])[0].toLowerCase().replace('jpeg', 'jpg');
+      fs.mkdirSync(path.join(destDir, 'images'), { recursive: true });
+      const out = path.join(destDir, 'images', romBase + ext);
+      fs.writeFileSync(out, Buffer.from(await img.arrayBuffer()));
+      return out;
+    }
+  } catch { /* cover is optional */ }
+  return null;
+}
+
 // Best-effort: grab box art, stored alongside the ROM in <folder>/images/. Returns its path or null.
 async function fetchBoxart(destDir, folder, romBase, title) {
   try {
     const boxUrl = await findBoxartUrl(folder, romBase, title);
-    if (!boxUrl) return null;
+    if (!boxUrl) return await wikipediaCover(destDir, romBase, title);
     const imagesDir = path.join(destDir, 'images');
     fs.mkdirSync(imagesDir, { recursive: true });
     const coverPath = path.join(imagesDir, `${romBase}.png`);
@@ -984,7 +1041,7 @@ function gameFromTitle(title) {
 // (es_systems dreamcast: .cdi .chd .gdi). Unpack with Windows' own tar (libarchive: zip and 7z) and
 // give the track files a per-game prefix, so two games never overwrite each other's "track01.bin".
 // Plain ROM zips (cartridges, arcade sets) are left alone: their emulators read them as they are.
-const ARCHIVE_EXT = /\.(zip|7z)$/i;
+const ARCHIVE_EXT = /\.(zip|7z|rar)$/i;
 const DISC_MAIN_ORDER = ['.gdi', '.cdi', '.chd', '.m3u', '.cue', '.ccd', '.iso'];
 const DISC_LISTS = ['.gdi', '.cue', '.m3u', '.ccd']; // text files that name the other files of the disc
 
@@ -1211,8 +1268,13 @@ function emitQueue() { sendToRenderer('queue:update', queueSnapshot()); }
 
 // Is this ROM already archived locally for the target folder?
 function existsInLibrary(settings, folder, filename) {
-  try { return fs.existsSync(path.join(libraryFolderDir(settings, folder), filename)); }
-  catch { return false; }
+  try {
+    const dir = libraryFolderDir(settings, folder);
+    if (fs.existsSync(path.join(dir, filename))) return true;
+    // after "arrumar" a cartridge game is no longer zipped: same name, other extension
+    const base = filename.replace(/\.[^.]+$/, '').toLowerCase();
+    return fs.readdirSync(dir).some((f) => f.replace(/\.[^.]+$/, '').toLowerCase() === base && !f.endsWith('.part'));
+  } catch { return false; }
 }
 
 async function processQueueItem(it) {
@@ -1226,8 +1288,9 @@ async function processQueueItem(it) {
     onProgress: (percent) => { it.percent = percent; emitQueue(); }
   });
 
-  // Send to the Pi (if connected). Skip-existing avoids re-uploading.
-  if (s.host) {
+  const target = s.target || 'notebook';
+  // Send to the Pi (if that is a destination and it is connected). Skip-existing avoids re-uploading.
+  if (s.host && target !== 'notebook') {
     it.status = 'uploading'; emitQueue();
     let up = await sftpUpload(s, { localPath: dl.localPath, folder: dl.folder, filename: dl.filename, overwrite: false });
     if (!up.ok && up.reason === 'exists' && !s.skipExisting) {
@@ -1238,7 +1301,25 @@ async function processQueueItem(it) {
       catch { /* cover optional */ }
     }
   }
+  // This notebook's arcade: right folder, an archive the emulator opens, cover, emulator ready.
+  if (target !== 'pi') {
+    it.status = 'preparing'; emitQueue();
+    await placeOnNotebook({ localPath: dl.localPath, folder: dl.folder, coverLocalPath: dl.coverLocalPath, title: dl.gameTitle });
+  }
   it.status = 'done'; it.percent = 100; emitQueue();
+}
+
+// Puts a game in this notebook's arcade (see arcade/place.js) and refreshes the arcade's list.
+async function placeOnNotebook(job, { quiet = false } = {}) {
+  const r = await place.placeGame(job, {
+    libraryRoot: libraryRoot(loadSettings()),
+    rootFor: (folder) => arcade.manager.retrobatRootFor(folder),
+    unpackDisc: unpackDiscImage,
+    fetchBoxart: (dir, folder, base, title) => fetchBoxart(dir, folder, base, title),
+    ensureCore: (folder) => arcade.manager.ensureCore(folder)
+  });
+  if (!quiet) arcade.libraryChanged();
+  return r;
 }
 
 async function runQueue() {
@@ -1369,11 +1450,16 @@ function setupDownloadInterception() {
         return;
       }
       // Ready for the Pi: disc images unpacked, plus box art, so automatic mode can send it all.
-      const ready = { filename, localPath: savePath, slug: detected.slug, folder: detected.folder, pageUrl, extraFiles: [] };
+      const ready = { filename, localPath: savePath, archivePath: savePath, slug: detected.slug, folder: detected.folder, pageUrl, extraFiles: [], title: gameFromTitle(pageTitle || lastBrowseTitle) };
       try {
         sendToRenderer('download:preparing', { filename });
         const disc = await unpackDiscImage(savePath, detected.folder);
         if (disc) Object.assign(ready, disc);
+        // console unknown from the page and the name: read it from the disc itself
+        if (!detected.folder && disc) {
+          const sniffed = await place.sniffConsole(disc.localPath).catch(() => null);
+          if (sniffed) { ready.folder = sniffed; ready.slug = sniffed; detected.folder = sniffed; }
+        }
       } catch (err) {
         sendToRenderer('download:failed', { filename, state: `não consegui descompactar: ${err.message}` });
         return;
@@ -1533,6 +1619,67 @@ function registerIpc() {
     mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
   });
   ipcMain.on('win:close', () => mainWindow && mainWindow.close());
+
+  // "Este notebook": the arcade mode that runs the games on this PC (RetroArch).
+  const nbProgress = (p) => sendToRenderer('notebook:progress', p);
+  ipcMain.handle('notebook:status', () => arcade.manager.status());
+  ipcMain.handle('notebook:place', (_e, job) => placeOnNotebook(job));
+  ipcMain.handle('notebook:play', (_e, id) => arcade.playFromPanel(id));
+  ipcMain.handle('notebook:installRetroArch', () => arcade.manager.installRetroArch(nbProgress));
+  ipcMain.handle('notebook:installCores', () => arcade.manager.installCores(nbProgress));
+  ipcMain.handle('notebook:cabinetPlan', () => arcade.manager.cabinetPlan());
+  // Box art for the notebook's games that have none yet (libretro thumbnails).
+  ipcMain.handle('notebook:fetchCovers', async () => {
+    const root = libraryRoot(loadSettings());
+    const missing = [];
+    for (const s of require('./arcade/library').scan(root)) {
+      for (const g of s.games) {
+        if (g.cover) continue;
+        // disc games live in <system>/<game>/..., their cover is named after that folder
+        const base = g.rel.includes('/') ? g.rel.split('/')[0] : g.rel.replace(/\.[^.]+$/, '');
+        missing.push({ dir: path.join(root, s.folder), folder: s.folder, base, name: g.name });
+      }
+    }
+    // RetroBat's games (they show up in the arcade too): cover in <system>/images/<rom base>.png
+    const retrobat = require('./arcade/retrobat');
+    const s0 = loadSettings();
+    const rbDir = s0.useRetroBat === false ? null : retrobat.find(s0);
+    if (rbDir) {
+      const rbSystems = retrobat.systems(rbDir);
+      for (const s of retrobat.scan(rbDir)) {
+        const sys = rbSystems[s.folder];
+        if (!sys) continue;
+        for (const g of s.games) {
+          if (g.cover) continue;
+          missing.push({ dir: sys.dir, folder: s.folder, base: path.basename(g.rom, path.extname(g.rom)), name: g.name });
+        }
+      }
+    }
+    let got = 0;
+    for (let i = 0; i < missing.length; i++) {
+      const m = missing[i];
+      nbProgress({ text: `Capas: ${m.name}`, percent: Math.round((i / missing.length) * 100) });
+      if (await fetchBoxart(m.dir, m.folder, m.base, m.name)) got++;
+    }
+    if (got) arcade.libraryChanged();
+    return { missing: missing.length, got };
+  });
+  ipcMain.handle('notebook:cabinetSync', () => arcade.manager.cabinetSync(nbProgress));
+  ipcMain.handle('notebook:setStartMode', (_e, mode) => arcade.manager.setStartMode(mode === 'manager' ? 'manager' : 'arcade'));
+  ipcMain.handle('notebook:setOpenAtLogin', (_e, on) => arcade.manager.setOpenAtLogin(on));
+  ipcMain.handle('notebook:pickRetroArch', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: 'Onde está o retroarch.exe?',
+      properties: ['openFile'],
+      filters: [{ name: 'RetroArch', extensions: ['exe'] }]
+    });
+    if (r.canceled || !r.filePaths[0]) return arcade.manager.status();
+    return arcade.manager.pickRetroArch(r.filePaths[0]);
+  });
+  ipcMain.handle('arcade:open', () => {
+    arcade.open();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1584,22 +1731,75 @@ function createWindow() {
     });
   });
 
+  mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+// The work panel (this window). Opened from the arcade's menu, or at start with --painel.
+function showManager() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  createWindow();
+}
+
+// The app opens straight into the arcade (the notebook is the cabinet now), unless the
+// panel was chosen as the start screen or asked for on the command line.
+function startScreen() {
+  if (process.argv.includes('--painel')) return 'manager';
+  if (process.argv.includes('--arcade')) return 'arcade';
+  return loadSettings().startMode === 'manager' ? 'manager' : 'arcade';
+}
+
 app.whenReady().then(() => {
+  if (!GOT_LOCK) {
+    if (process.env.ADZ_DEV) console.log('[dev] o app já está aberto: feche a outra janela (inclusive na bandeja) e rode de novo.');
+    return;
+  }
+  if (process.env.ADZ_DEV) require('./dev-reload')();   // npm run dev: screens reload on save
   // Windows groups taskbar icons by AppUserModelID; set it so our icon (not the
   // default Electron one) shows on the taskbar, even when running `electron .`.
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
   Menu.setApplicationMenu(null); // no native menu bar (cleaner, macOS-like)
   registerIpc();
+  // the notebook's own download queue (dlqueue.js): the app and the phone only send the order
+  const dlq = require('./dlqueue').create({
+    userData: app.getPath('userData'),
+    download: (url, onProgress) => downloadFromRetrostic(url, { silent: true, onProgress }),
+    place: (job) => placeOnNotebook(job),
+    onChange: (snap) => { sendToRenderer('dlq:update', snap); arcade.queueChanged(snap); },
+    log: (m) => console.log(m)
+  });
+  ipcMain.handle('dlq:add', (_e, input) => dlq.add(input, { from: 'app' }));
+  ipcMain.handle('dlq:state', () => dlq.snapshot());
+  ipcMain.handle('dlq:control', (_e, { action, id } = {}) => dlq.control(action, id));
+  arcade.init({
+    queue: { add: (input) => dlq.add(input, { from: 'celular' }), state: () => dlq.snapshot(), control: (a, id) => dlq.control(a, id) },
+    loadSettings, saveSettings, libraryRoot, showManager, connectConfig,
+    // a game sent from the phone: unpack disc images and fetch the box art, like a download
+    afterUpload: (file, folder) => placeOnNotebook({ localPath: file, folder }, { quiet: true })
+  });
   setupDownloadInterception();
-  createWindow();
+  if (startScreen() === 'arcade') arcade.open(); else createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// One copy only: opening the app again brings the arcade (or the panel) back to the front.
+if (!GOT_LOCK) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    if (argv.includes('--painel')) showManager();
+    else if (arcade.isOpen() || argv.includes('--arcade')) arcade.open();
+    else showManager();
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

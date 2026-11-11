@@ -5,3 +5,4 @@ out/
 # Turbinar: the payload key and the encrypted bundle are made by scripts/pack-turbinar.js
 src/turbinar-key.js
 resources/turbinar/
+*.stackdump

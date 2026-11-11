@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' adz:; img-src 'self' adz: data: https:; font-src adz:; media-src adz:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Arcade do Zero</title>
+  <link rel="stylesheet" href="arcade.css" />
+</head>
+<body>
+  <div class="backdrop"><img id="backdrop" alt=""></div>
+
+  <main class="stage" id="stage">
+    <!-- same layers as the EmulationStation theme (_inc/layout.xml) -->
+    <img class="layer bg" id="bg" alt="">
+    <img class="layer bg bg-next" id="bgNext" alt="">
+    <img class="layer shade" src="adz://theme/_inc/shade.png" alt="">
+
+    <div class="screen" id="screen">
+      <img id="screenImg" alt="">
+      <div class="screen-empty" id="screenEmpty"></div>
+    </div>
+    <img class="frame" src="adz://theme/_inc/frame.png" alt="">
+
+    <img class="title" id="titleImg" alt="">
+    <div class="title-text" id="titleText"></div>
+    <img class="char" id="charImg" alt="">
+
+    <!-- system view: the vertical wheel -->
+    <section class="view view-system" id="viewSystem">
+      <div class="wheel" id="wheel"></div>
+      <img class="pointer" src="adz://theme/_inc/pointer.png" alt="">
+      <div class="sysinfo"><span id="sysInfo"></span></div>
+    </section>
+
+    <!-- game list view -->
+    <section class="view view-games" id="viewGames" hidden>
+      <ul class="gamelist" id="gamelist"></ul>
+      <div class="game-meta" id="gameMeta"></div>
+    </section>
+
+    <!-- INÍCIO (as on the cabinet): covers in the middle, the consoles' wheel on the right -->
+    <section class="view-inicio" id="viewInicio">
+      <div class="synth" aria-hidden="true"><div class="stars"></div><div class="sun"></div><div class="floor"></div><div class="scan"></div></div>
+      <div class="ambient" id="ambient"></div>
+      <div class="shelf-title" id="shelfTitle"></div>
+      <div class="top-stats" id="topStats" aria-hidden="true"></div>
+      <div class="case-glow" id="caseGlow"></div>
+      <div class="carousel" id="carousel"></div>
+      <div class="game-info">
+        <h1 id="gameName"></h1>
+        <p id="gameSub"></p>
+        <div class="game-meta-inicio" id="gameMeta2"></div>
+      </div>
+      <div class="pills" id="pills"></div>
+      <div class="pill-pointer"></div>
+    </section>
+
+    <footer class="help" id="help"></footer>
+    <div class="clock" id="clock"></div>
+    <div class="qr-mini" id="qrMini" hidden><img id="qrMiniImg" alt="QR code do celular"><span>Celular</span></div>
+  </main>
+
+  <!-- Start menu -->
+  <div class="overlay" id="menu" hidden>
+    <div class="menu-box">
+      <h2>Menu</h2>
+      <ul class="menu-list" id="menuList"></ul>
+    </div>
+  </div>
+
+  <!-- Phone: QR code to open the phone page -->
+  <div class="overlay" id="phone" hidden>
+    <div class="phone-box">
+      <img id="qrBig" alt="QR code do celular">
+      <div class="phone-text">
+        <h2>Conecte o celular</h2>
+        <p>Aponte a câmera do celular para o código. O celular precisa estar no <b>mesmo Wi-Fi</b> do fliperama.</p>
+        <p class="phone-url" id="phoneUrl"></p>
+        <p>No celular você vê os jogos, abre um jogo aqui na tela e envia jogos novos para o fliperama.</p>
+        <ul class="menu-list" id="phoneList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls: setup wizard and live test -->
+  <div class="overlay" id="controls" hidden>
+    <div class="ctl-box">
+      <h2 id="ctlTitle">Configurar controles</h2>
+      <p class="ctl-sub" id="ctlSub"></p>
+      <div class="ctl-prompt" id="ctlPrompt"></div>
+      <div class="ctl-bar"><i id="ctlBar"></i></div>
+      <ul class="ctl-done" id="ctlDone"></ul>
+      <div class="ctl-test" id="ctlTest" hidden></div>
+      <p class="ctl-foot" id="ctlFoot"></p>
+    </div>
+  </div>
+
+  <!-- Running a game / downloading an emulator -->
+  <div class="overlay overlay-play" id="playing" hidden>
+    <div class="play-box">
+      <div class="spinner" id="playSpin"></div>
+      <h2 id="playTitle"></h2>
+      <p id="playText"></p>
+      <div class="ctl-bar" id="playBarWrap" hidden><i id="playBar"></i></div>
+    </div>
+  </div>
+
+  <!-- OFFICE mode: the cabinet's desk dashboard (office.js) -->
+  <div class="office" id="office" hidden>
+    <img class="office-bg" id="officeBg" alt="">
+    <div class="office-body" id="officeBody"></div>
+    <footer class="office-tabs"><div id="officeTabs"></div><div class="office-hint" id="officeHint"></div></footer>
+  </div>
+
+  <!-- with the mouse: minimize (work on the notebook, the music goes on) and close -->
+  <div class="winbar" id="winbar">
+    <button id="winOffice" class="wide" title="Modo escritório (X)">ESCRITÓRIO <small>X</small></button>
+    <button id="winMin" title="Minimizar (a música continua)">&#x2500;</button>
+    <button id="winClose" class="close" title="Fechar o arcade">&#x2715;</button>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="input.js"></script>
+  <script src="manage.js"></script>
+  <script src="office.js"></script>
+  <script src="arcade.js"></script>
+</body>
+</html>

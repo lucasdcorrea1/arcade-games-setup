@@ -681,3 +681,74 @@ button.mini { padding: 6px 11px; font-size: 12px; border-radius: var(--r-xs); }
 button.link { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12.5px; text-decoration: underline; cursor: pointer; box-shadow: none; }
 button.link:hover { color: var(--err); }
 @media (max-width: 980px) { .tb-hero, .tb-cards { grid-template-columns: minmax(0, 1fr); } }
+
+/* ============================================================
+   Este notebook (arcade mode on this PC)
+   ============================================================ */
+.arcade-btn {
+  display: flex; align-items: center; gap: 8px; border-radius: var(--r-pill); padding: 7px 14px;
+  background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 600;
+}
+.arcade-btn:hover { filter: brightness(1.08); background: var(--accent-grad); }
+.nb { padding: 18px 20px 28px; display: grid; gap: 18px; max-width: 1180px; width: 100%; margin: 0 auto; }
+.nb-hero {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; align-items: center;
+  border: 1px solid var(--border); border-radius: var(--r-lg); padding: 24px 26px;
+  background:
+    linear-gradient(90deg, rgba(12,14,21,.94) 0%, rgba(12,14,21,.78) 55%, rgba(12,14,21,.55) 100%),
+    url("assets/cabinet.jpg") right center / cover no-repeat, var(--surface);
+}
+.nb-hero h2 { margin: 0 0 8px; font-size: 24px; letter-spacing: .2px; }
+.nb-hero p { margin: 0 0 18px; color: var(--muted); line-height: 1.55; max-width: 62ch; }
+.nb-hero code { background: var(--surface-2); padding: 1px 7px; border-radius: 6px; color: var(--text); }
+.nb-actions, .nb-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.nb-stats { display: grid; gap: 10px; }
+.nb-stats div {
+  display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-radius: var(--r);
+  background: rgba(21,25,38,.75); border: 1px solid var(--border); backdrop-filter: blur(6px);
+}
+.nb-stats b { font-size: 26px; font-variant-numeric: tabular-nums; min-width: 2ch; }
+.nb-stats span { color: var(--muted); }
+.nb-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.nb-systems { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.nb-systems li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 7px 10px; border-radius: var(--r-xs); background: var(--surface-2); font-size: 13px; }
+.nb-systems li.empty { display: block; color: var(--muted); }
+.nb-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.nb-core { font-size: 12px; padding: 2px 8px; border-radius: var(--r-pill); background: var(--surface-3); }
+.nb-core.ok { color: var(--ok); }
+.nb-core.miss { color: var(--gold); }
+.nb-core.off { color: var(--muted-2); }
+.nb-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.nb-opt:hover { background: var(--surface-2); }
+.nb-opt input { margin-top: 3px; accent-color: var(--accent); }
+.nb-opt b { display: block; font-weight: 600; }
+.nb-opt small { color: var(--muted); }
+.nb-keys { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nb-keys td { padding: 6px 4px; border-top: 1px solid var(--border); }
+.nb-keys td:first-child { font-weight: 600; white-space: nowrap; width: 45%; }
+.nb-keys td:last-child { color: var(--muted); }
+@media (max-width: 980px) { .nb-cards, .nb-hero { grid-template-columns: 1fr; } }
+.nb-sync h3 .icon { color: var(--accent); }
+.nb-sync .nb-systems { max-height: 220px; }
+.nb-phone { grid-template-columns: auto 1fr; align-items: center; gap: 20px; }
+.nb-phone > img { width: 168px; height: 168px; border-radius: var(--r); background: #fff; }
+.nb-phone h3 { margin-bottom: 6px; }
+.nb-phone h3 .icon { color: var(--accent); }
+.nb-phone code { display: inline-block; background: var(--surface-2); padding: 4px 9px; border-radius: 7px; margin: 0 0 8px; color: var(--gold); word-break: break-all; }
+.target-sel { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; font: inherit; }
+#sbPlay.hidden { display: none; }
+
+/* Este notebook: download queue */
+.nb-queue textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line, #2a2c31); background: var(--bg2, #111214); color: inherit; margin: 6px 0; }
+.nb-queue-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.nb-queue-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.04); }
+.nb-queue-list li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nb-queue-list b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.nb-queue-list small { opacity: .7; }
+.nb-queue-list .q-done small { color: #3fc882; opacity: 1; }
+.nb-queue-list .q-failed small, .nb-queue-list .q-err { color: #f05460; opacity: 1; }
+.nb-queue-list .q-downloading small { color: #4da3ff; opacity: 1; }
+.q-bar { display: block; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; }
+.q-bar em { display: block; height: 100%; background: #4da3ff; }
+.nb-queue h3 small { font-weight: 400; margin-left: 6px; }

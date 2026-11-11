@@ -53,6 +53,64 @@ certificado — não quer dizer vírus.** Para rodar:
 Se preferir não confiar no `.exe`, **compile o seu** (seção abaixo) — o resultado é idêntico,
 sem o aviso de "autor desconhecido" para você mesmo.
 
+## 🕹️ Modo arcade (o notebook é o fliperama)
+
+A partir da v2 o app também **roda os jogos no próprio PC**, numa tela cheia com o
+layout da tela INÍCIO do fliper, desenhado só em CSS (céu neon, sol retrô, chão em grade andando,
+linhas de CRT, uma cor por console): capas num
+carrossel no meio e a roda de consoles em pílulas à direita (a primeira abre o escritório).
+O app **abre direto no modo arcade**; o painel de antes continua em
+*START → Painel de trabalho* (ou abrindo com `--painel`).
+
+- **Modo escritório**: o mesmo do fliperama. ESCRITÓRIO abre com a faixa AGORA (próxima reunião,
+  GMUD ou tarefa, o anel do foco e os botões rápidos 📞 Em call, que pausa a música e marca OCUPADO
+  no fliper, 🎯 Foco e ⏯ Música). Páginas: ESCRITÓRIO, CLAUDE, GITHUB, NOTÍCIAS, BOLSA,
+  RENDA FIXA, CASA e JOGOS, os jogos do escritório jogados aqui no notebook). Os dados ficam no
+  fliperama (servidor do celular, porta 8080): tarefas, lembretes, contas, metas e foco
+  marcados aqui, no fliper ou no celular (`escritorio.html`) aparecem nos três. Abre sozinho no
+  horário de trabalho do fliper, ou por *START → Modo escritório* ou SELECT (a ficha) na roda de
+  sistemas. O manche para os lados passa de cartão e, depois do último, de página (L/R também);
+  A age na linha, B desfaz, X liga/desliga o foco, START volta para os jogos. O manche do
+  Jogador 2 (Lados do painel) rola a matéria em NOTÍCIAS, que vêm traduzidas e com a imagem
+  da matéria (Google Tradutor; guardadas em `news-extra.json`). GITHUB: em alta (hoje e semana),
+  amigos, PRs, meus repos e builds (Y / B trocam a seção), com o README montado ao lado; usa o
+  token do GitHub configurado no fliper (lido por SFTP, só em memória). MÚSICA: o YouTube para TV
+  (youtube.com/tv) dentro do arcade, pelo manche e A/B; Y tela cheia; SELECT ou a tecla play/pause
+  do teclado pausam de qualquer lugar; abrir um jogo pausa. Login uma vez (youtube.com/activate).
+- **Jogos**: os mesmos que o app baixa, em `D:\Arcade-ROMs\<sistema>\` (capas em `images\`).
+  Jogos de disco descompactados aparecem uma vez só.
+- **Emulador**: o RetroArch oficial (buildbot do libretro), instalado em
+  `%LOCALAPPDATA%\ArcadeDoZero\RetroArch` pela aba **Este notebook** ou sozinho no primeiro jogo.
+  O core de cada sistema também é baixado na primeira vez. Um RetroArch que você já tem é
+  encontrado sozinho (ou escolha o `retroarch.exe`).
+- **Painel USB / controle**: encoders arcade aparecem como joystick. *START → Configurar
+  controle* faz o mesmo que o "Configure Input" do RetroPie: grava a navegação do arcade, um
+  perfil de autoconfig do RetroArch para o encoder e os atalhos do jogo. Painéis no modo
+  teclado (I-PAC: setas, Ctrl, Alt, 1, 5) funcionam sem configurar.
+
+| Comando | No arcade | No jogo |
+|---|---|---|
+| Direcional | ↕ console, ↔ jogos (L/R pulam de 10 em 10) | — |
+| Botão 1 / A | jogar | — |
+| Botão 2 / B | voltar | — |
+| Botão 4 / Y | favorito | — |
+| SELECT | sortear um jogo | tecla de atalho |
+| START | menu | `SELECT + START` sai e volta pro arcade |
+| — | — | `SELECT + Botão 3` menu do RetroArch, `SELECT + R/L` salvar/carregar |
+| `SELECT + S` / `SELECT + L` | abaixar / aumentar o volume do Windows (caixa JBL inclusa) | o mesmo, no volume do RetroArch |
+
+Também tem **Favoritos**, **Últimos jogados** e **Todos os jogos**, opção de abrir o arcade
+quando o Windows liga e desligar o notebook pelo menu.
+
+**Celular (QR code):** o notebook serve uma página no Wi-Fi (porta 8080). O QR aparece no
+canto do arcade, em *START → Conectar celular* e na aba **Este notebook**; ele já leva a chave
+de acesso, então ninguém mais na rede usa a página. No celular: ver os jogos, abrir um jogo na
+tela do fliperama e **enviar jogos** baixados no celular (vários de uma vez) direto para a
+biblioteca. Se o celular não abrir a página, use *Liberar no firewall do Windows* (pede
+permissão de administrador uma vez).
+
+Para testar com outra pasta de configuração: `ADZ_USER_DATA=C:\caminho npm start`.
+
 ## Abas
 
 - **Baixar** — navegador embutido (começa no retrostic). Baixou, aparece um painel

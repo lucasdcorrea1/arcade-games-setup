@@ -87,6 +87,28 @@ contextBridge.exposeInMainWorld('api', {
   onTurbinarProgress: (cb) => ipcRenderer.on('turbinar:progress', (_e, d) => cb(d)),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
 
+  // "Este notebook": arcade mode on this PC (RetroArch, cores, start screen).
+  openArcade: () => ipcRenderer.invoke('arcade:open'),
+  placeOnNotebook: (job) => ipcRenderer.invoke('notebook:place', job),
+  playOnNotebook: (id) => ipcRenderer.invoke('notebook:play', id),
+  phoneInfo: () => ipcRenderer.invoke('phone:info'),
+  phoneFirewall: () => ipcRenderer.invoke('phone:firewall'),
+  // the download queue the notebook works through by itself (dlqueue.js)
+  queueAdd: (input) => ipcRenderer.invoke('dlq:add', input),
+  queueState: () => ipcRenderer.invoke('dlq:state'),
+  queueControl: (action, id) => ipcRenderer.invoke('dlq:control', { action, id }),
+  onQueue: (cb) => ipcRenderer.on('dlq:update', (_e, s) => cb(s)),
+  notebookStatus: () => ipcRenderer.invoke('notebook:status'),
+  notebookInstallRetroArch: () => ipcRenderer.invoke('notebook:installRetroArch'),
+  notebookInstallCores: () => ipcRenderer.invoke('notebook:installCores'),
+  notebookCabinetPlan: () => ipcRenderer.invoke('notebook:cabinetPlan'),
+  notebookFetchCovers: () => ipcRenderer.invoke('notebook:fetchCovers'),
+  notebookCabinetSync: () => ipcRenderer.invoke('notebook:cabinetSync'),
+  notebookPickRetroArch: () => ipcRenderer.invoke('notebook:pickRetroArch'),
+  notebookSetStartMode: (mode) => ipcRenderer.invoke('notebook:setStartMode', mode),
+  notebookSetOpenAtLogin: (on) => ipcRenderer.invoke('notebook:setOpenAtLogin', on),
+  onNotebookProgress: (cb) => ipcRenderer.on('notebook:progress', (_e, d) => cb(d)),
+
   // "Novo fliperama": prepare an SD card and set up a brand-new Raspberry Pi.
   setupPiInfo: (settings) => ipcRenderer.invoke('setup:piInfo', settings),
   setupImages: () => ipcRenderer.invoke('setup:images'),

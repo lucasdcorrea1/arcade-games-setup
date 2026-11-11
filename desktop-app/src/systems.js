@@ -23,6 +23,12 @@ const SYSTEMS = [
   { folder: 'dreamcast', label: 'Dreamcast / NAOMI', slugs: ['dreamcast', 'sega-dreamcast', 'naomi'] },
   { folder: 'psx', label: 'PlayStation (PSX)', slugs: ['psx', 'playstation', 'sony-playstation', 'ps1', 'ps-1'] },
   { folder: 'psp', label: 'PSP', slugs: ['psp', 'playstation-portable', 'sony-psp'] },
+  // Bigger consoles: on the notebook they run through RetroBat's emulators (PCSX2, RPCS3, Dolphin...)
+  { folder: 'ps2', label: 'PlayStation 2', slugs: ['ps2', 'playstation-2', 'sony-playstation-2', 'playstation2'] },
+  { folder: 'ps3', label: 'PlayStation 3', slugs: ['ps3', 'playstation-3', 'sony-playstation-3', 'playstation3'] },
+  { folder: 'gamecube', label: 'GameCube', slugs: ['gamecube', 'nintendo-gamecube', 'gc', 'ngc'] },
+  { folder: 'wii', label: 'Wii', slugs: ['wii', 'nintendo-wii'] },
+  { folder: 'xbox', label: 'Xbox', slugs: ['xbox', 'microsoft-xbox'] },
   { folder: 'fba', label: 'Arcade (MAME / FBA)', slugs: ['mame', 'arcade', 'fba', 'fbneo', 'final-burn', 'cps-1', 'cps-2', 'cps-3', 'cps1', 'cps2', 'cps3'] },
   { folder: 'neogeo', label: 'Neo Geo', slugs: ['neogeo', 'neo-geo', 'snk-neo-geo', 'snk-neo-geo-aes', 'neo-geo-aes'] },
   { folder: 'pcengine', label: 'PC Engine / TurboGrafx-16', slugs: ['pcengine', 'pc-engine', 'turbografx-16', 'turbografx', 'turbografx16', 'turbografx-cd'] },

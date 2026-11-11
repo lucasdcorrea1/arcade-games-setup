@@ -31,7 +31,9 @@ const ICONS = {
   wifi: '<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 16a5 5 0 0 1 6.6 0"/><path d="M12 19.5h0"/>',
   power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
   store: '<path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9"/><path d="M3 10 5 4h14l2 6"/><path d="M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M10 20v-5h4v5"/>',
-  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/><path d="M12 15v2"/>'
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/><path d="M12 15v2"/>',
+  play: '<path d="M7 4.5v15l12.5-7.5z"/>',
+  laptop: '<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'
 };
 function svgIcon(name, extraClass) {
   const body = ICONS[name] || '';
@@ -312,6 +314,45 @@ async function sendToPi(info, statusEl, auto) {
   }
 }
 
+// Delivers a game to where it is played: this notebook's arcade (right folder, archive fixed,
+// cover, emulator ready), the RetroPie cabinet, or both — the "Para…" picker in the Baixar bar.
+let placedId = null;
+async function deliver(info, statusEl, auto) {
+  const target = (settings && settings.target) || 'notebook';
+  $('sbPlay').classList.add('hidden');
+  placedId = null;
+  let piOk = true;
+  if (target !== 'notebook') {
+    if (target === 'pi' || (settings && settings.host)) piOk = await sendToPi(info, statusEl, auto);
+    if (target === 'pi') return piOk;
+  }
+  setStatus(statusEl, 'Arrumando o jogo no notebook (pasta certa, arquivo, capa e emulador)…');
+  try {
+    const r = await window.api.placeOnNotebook({
+      localPath: info.archivePath || info.localPath,
+      folder: info.folder,
+      coverLocalPath: info.coverLocalPath,
+      title: info.title,
+      copy: info.source === 'import'
+    });
+    placedId = r.id;
+    $('sbPlay').classList.remove('hidden');
+    setStatus(statusEl, `Pronto! ${r.name} já está no fliperama${target === 'both' && settings.host ? ' e na Raspberry' : ''} ✅`, 'ok');
+    statusBar.set(`${r.name} pronto para jogar`, { kind: 'ok' });
+    return piOk;
+  } catch (err) {
+    setStatus(statusEl, plainError(err), 'err');
+    statusBar.set(plainError(err), { kind: 'err' });
+    return false;
+  }
+}
+
+$('sbPlay').addEventListener('click', async () => {
+  if (!placedId) return;
+  const r = await window.api.playOnNotebook(placedId);
+  if (r && !r.ok) setStatus($('sbStatus'), r.error, 'err');
+});
+
 $('sbChange').addEventListener('click', () => {
   if (!pending) return;
   openConsoleModal((folder) => {
@@ -326,9 +367,8 @@ $('sbCancel').addEventListener('click', hideSendBar);
 $('sbSend').addEventListener('click', async () => {
   if (!pending || !pending.localPath || !pending.folder) return;
   $('sbSend').disabled = true;
-  const ok = await sendToPi(pending, $('sbStatus'), false);
+  await deliver(pending, $('sbStatus'), false);
   $('sbSend').disabled = false;
-  if (ok) setTimeout(hideSendBar, 3000);
 });
 
 window.api.onUploadProgress((d) => {
@@ -465,9 +505,8 @@ $('impPick').addEventListener('click', async () => {
     showSendBar(info);
     if (settings.autoSend) {
       $('sbSend').disabled = true;
-      const ok = await sendToPi(info, $('sbStatus'), true);
+      await deliver(info, $('sbStatus'), true);
       $('sbSend').disabled = false;
-      if (ok) setTimeout(hideSendBar, 3500);
     }
   });
 });
@@ -491,16 +530,18 @@ window.api.onDownloadPreparing(() => {
 });
 window.api.onDownloadReady(async (d) => {
   const info = {
-    filename: d.filename, localPath: d.localPath, folder: d.folder,
-    coverLocalPath: d.coverLocalPath, extraFiles: d.extraFiles || [], source: 'download'
+    filename: d.filename, localPath: d.localPath, archivePath: d.archivePath || d.localPath, folder: d.folder,
+    coverLocalPath: d.coverLocalPath, extraFiles: d.extraFiles || [], title: d.title || d.gameTitle, source: 'download'
   };
   showSendBar(info);
+  $('sbPlay').classList.add('hidden');
   // Automatic mode: if the console was detected, send it all the way through.
   if (settings.autoSend && info.folder) {
     $('sbSend').disabled = true;
-    const ok = await sendToPi(info, $('sbStatus'), true);
+    await deliver(info, $('sbStatus'), true);
     $('sbSend').disabled = false;
-    if (ok) setTimeout(hideSendBar, 3500);
+  } else if (!info.folder) {
+    setStatus($('sbStatus'), 'Não descobri o console. Clique em "trocar", escolha e depois em Mandar pro fliperama.', 'err');
   }
 });
 
@@ -1425,7 +1466,7 @@ function showQueueControls(show) {
   $('sbarList').classList.toggle('hidden', !show);
 }
 function badgeLabel(status) {
-  return { pending: 'na fila', downloading: 'baixando', uploading: 'enviando',
+  return { pending: 'na fila', downloading: 'baixando', uploading: 'enviando', preparing: 'arrumando',
     done: 'ok', skipped: 'já tinha', failed: 'falhou' }[status] || status;
 }
 function badgeClass(status) {
@@ -1849,6 +1890,11 @@ async function init() {
   $('autoSend').addEventListener('change', async () => {
     settings.autoSend = $('autoSend').checked;
     settings = await window.api.saveSettings(settings);
+  });
+  $('target').value = settings.target || 'notebook';
+  $('target').addEventListener('change', async () => {
+    settings.target = $('target').value;
+    settings = await window.api.saveSettings({ target: settings.target, autoSend: settings.autoSend });
   });
 
   // Browser: the first screen asks which site to get games from.

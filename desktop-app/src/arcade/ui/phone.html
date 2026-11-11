@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0e15">
+<title>Arcade do Zero</title>
+<style>
+  :root {
+    --bg: #0c0e15; --surface: #151926; --surface-2: #1d2233; --line: #272d41;
+    --text: #eef1f8; --muted: #8990a6; --accent: #7a5cff; --gold: #ffd34a; --ok: #38d39a; --err: #ff6b74;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; background: rgba(12,14,21,.92); backdrop-filter: blur(10px); padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .3px; display: flex; align-items: center; gap: 10px; }
+  h1 i { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  h1 i.off { background: var(--err); box-shadow: none; }
+  .now { margin-top: 8px; font-size: 14px; color: var(--muted); }
+  .now b { color: var(--gold); }
+  main { padding: 12px 16px; }
+  .search { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 16px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 4px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; padding: 8px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 14px; font-weight: 600; }
+  .chip.on { background: var(--accent); border-color: transparent; color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; text-align: left; color: inherit; padding: 0; font: inherit; }
+  .card .art { aspect-ratio: 4 / 3; background: var(--surface-2) center / contain no-repeat; display: grid; place-items: center; color: var(--muted); font-size: 28px; }
+  .card .t { padding: 8px 10px 10px; font-size: 14px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .t { padding-bottom: 2px; }
+  .card .s { padding: 2px 10px 10px; font-size: 12px; color: var(--muted); }
+  .empty { color: var(--muted); text-align: center; padding: 40px 12px; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: rgba(21,25,38,.96); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 6; }
+  nav button { flex: 1; padding: 14px 0 16px; background: none; border: 0; color: var(--muted); font: 600 15px system-ui, sans-serif; }
+  nav button.on { color: #fff; box-shadow: inset 0 3px 0 var(--accent); }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; z-index: 10; }
+  .sheet[hidden] { display: none; }
+  .sheet .box { width: 100%; background: var(--surface); border-radius: 20px 20px 0 0; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
+  .sheet .cover { width: 100%; max-height: 38vh; object-fit: contain; border-radius: 12px; background: var(--surface-2); }
+  .sheet h2 { margin: 14px 0 4px; font-size: 20px; }
+  .sheet p { margin: 0 0 16px; color: var(--muted); }
+  .btn { display: block; width: 100%; padding: 15px; border-radius: 14px; border: 0; font: 700 17px system-ui, sans-serif; background: var(--accent); color: #fff; margin-top: 10px; text-align: center; text-decoration: none; }
+  .btn.ghost { background: var(--surface-2); color: var(--text); }
+  .btn:disabled { opacity: .5; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .step h3 { margin: 0 0 6px; font-size: 16px; display: flex; gap: 10px; align-items: center; }
+  .step h3 span { width: 26px; height: 26px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; font-size: 14px; }
+  .step p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+  select { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 16px; }
+  .files { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .files li { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .files li .bar { height: 4px; background: rgba(255,255,255,.1); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+  .files li .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .files li.ok { color: var(--ok); } .files li.ok .bar i { background: var(--ok); }
+  .files li.err { color: var(--err); }
+  .toast { position: fixed; left: 16px; right: 16px; bottom: calc(86px + env(safe-area-inset-bottom)); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; z-index: 20; font-weight: 600; }
+  .toast[hidden] { display: none; }
+  .toast.err { border-color: var(--err); }
+  .add { display: flex; gap: 8px; margin-bottom: 8px; }
+  .add input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 16px; }
+  .add input[type=date] { flex: none; width: 140px; padding: 12px 8px; color-scheme: dark; }
+  .add button { flex: none; padding: 0 16px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; font: 700 16px system-ui, sans-serif; }
+  .grp { margin: 18px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+  .grp.late { color: var(--err); }
+  .task { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 4px 4px 12px; margin-bottom: 6px; }
+  .task .ck { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--muted); background: none; padding: 0; color: #111; font-weight: 900; }
+  .task.done .ck { background: var(--ok); border-color: var(--ok); }
+  .task .tx { flex: 1; min-width: 0; padding: 10px 0; overflow-wrap: anywhere; }
+  .task.done .tx { color: var(--muted); text-decoration: line-through; }
+  .task .tx small { display: block; color: var(--muted); font-size: 12px; text-decoration: none; }
+  .task .ic { flex: none; width: 40px; height: 40px; border: 0; background: none; color: var(--muted); font-size: 18px; border-radius: 10px; }
+  .task .ic:active { background: var(--surface-2); }
+  .qhelp { font-size: 14px; opacity: .75; margin: 12px 16px 0; }
+  .qjob .tx small { display: block; }
+  .qjob.failed small { color: #f05460; } .qjob.done small { color: #3fc882; }
+  .qbar { display: block; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); margin-top: 6px; overflow: hidden; }
+  .qbar b { display: block; height: 100%; background: #3fc882; }
+</style>
+</head>
+<body>
+  <header>
+    <h1><i id="dot"></i> Arcade do Zero</h1>
+    <div class="now" id="now">Conectando ao fliperama…</div>
+  </header>
+
+  <main id="tabGames">
+    <input class="search" id="q" type="search" placeholder="Procurar jogo" autocomplete="off">
+    <div class="chips" id="chips"></div>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  <main id="tabSend" hidden>
+    <div class="step">
+      <h3><span>1</span> Baixe o jogo aqui no celular</h3>
+      <p>Abra o site, escolha o jogo e toque em Download. O arquivo fica nos Downloads do celular.</p>
+      <a class="btn ghost" href="https://romspure.cc/roms/" target="_blank" rel="noopener">Abrir o RomsPure</a>
+    </div>
+    <div class="step">
+      <h3><span>2</span> De qual sistema é?</h3>
+      <select id="sys"></select>
+    </div>
+    <div class="step">
+      <h3><span>3</span> Mande para o fliperama</h3>
+      <p>Pode escolher vários arquivos de uma vez. Eles vão direto para a lista de jogos.</p>
+      <input type="file" id="file" multiple hidden>
+      <button class="btn" id="pick">Escolher arquivos</button>
+      <ul class="files" id="files"></ul>
+    </div>
+  </main>
+
+  <main id="tabWork" hidden>
+    <div class="add"><input id="wText" placeholder="Nova tarefa do trabalho" maxlength="140" enterkeyhint="done"><input id="wDay" type="date"><button id="wAdd">+</button></div>
+    <div id="wList"><p class="empty">Carregando…</p></div>
+    <div class="grp">ANOTAÇÕES</div>
+    <div class="add"><input id="nText" placeholder="Anotar algo" maxlength="140" enterkeyhint="done"><button id="nAdd">+</button></div>
+    <div id="nList"></div>
+  </main>
+  <main id="tabQueue" hidden>
+    <p class="qhelp">Cole o link da página do jogo (Retrostic). O notebook baixa sozinho, coloca no fliperama com capa e pode até estar com o app fechado na aba de jogos.</p>
+    <div class="add"><input id="qUrl" type="url" placeholder="https://www.retrostic.com/…" enterkeyhint="go"><button id="qAdd">Baixar</button></div>
+    <div id="qList"><p class="empty">Carregando…</p></div>
+  </main>
+  <nav>
+    <button class="on" data-tab="Games">Jogos</button>
+    <button data-tab="Queue">Baixar</button>
+    <button data-tab="Work">Trabalho</button>
+    <button data-tab="Send">Enviar jogos</button>
+  </nav>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="box">
+      <img class="cover" id="sCover" alt="">
+      <h2 id="sName"></h2>
+      <p id="sSys"></p>
+      <button class="btn" id="sPlay">Jogar no fliperama</button>
+      <button class="btn ghost" id="sClose">Voltar</button>
+    </div>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+// the key comes in the QR link; kept so the page also works when reopened from the home screen
+let K = new URLSearchParams(location.search).get('k');
+try { if (K) localStorage.setItem('adz-k', K); else K = localStorage.getItem('adz-k'); } catch { /* private mode */ }
+const api = (p) => `${p}${p.includes('?') ? '&' : '?'}k=${encodeURIComponent(K || '')}`;
+
+let data = null, sys = 'all', current = null;
+
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 3500);
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+async function load() {
+  try {
+    const r = await fetch(api('/api/state'));
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'erro');
+    data = j;
+    $('dot').className = '';
+    $('now').innerHTML = j.playing ? `Jogando agora: <b>${esc(j.playing.name)}</b>` : `${j.systems.reduce((n, s) => n + s.games.length, 0)} jogos no fliperama`;
+    renderChips(); renderGrid(); renderSystems();
+  } catch (err) {
+    $('dot').className = 'off';
+    $('now').textContent = K ? 'Sem conexão. O notebook está ligado e no mesmo Wi-Fi?' : 'Leia o QR code que aparece no fliperama.';
+  }
+}
+
+function renderChips() {
+  const chips = [{ folder: 'all', label: 'Todos' }, ...data.systems];
+  $('chips').innerHTML = chips.map((s) => `<button class="chip ${s.folder === sys ? 'on' : ''}" data-f="${esc(s.folder)}">${esc(s.label)}</button>`).join('');
+}
+
+function games() {
+  const q = $('q').value.trim().toLowerCase();
+  const list = data.systems.filter((s) => sys === 'all' || s.folder === sys)
+    .flatMap((s) => s.games.map((g) => ({ ...g, system: s.label })));
+  return list.filter((g) => !q || g.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
+function renderGrid() {
+  const list = games();
+  if (!list.length) { $('grid').innerHTML = `<div class="empty">${data.systems.length ? 'Nenhum jogo encontrado.' : 'Ainda não tem jogos. Use a aba Enviar jogos.'}</div>`; return; }
+  $('grid').innerHTML = list.slice(0, 300).map((g) => `
+    <button class="card" data-id="${esc(g.id)}">
+      <div class="art" ${g.cover ? `style="background-image:url('${api('/api/cover?id=' + encodeURIComponent(g.id))}')"` : ''}>${g.cover ? '' : '🕹️'}</div>
+      <div class="t">${g.favorite ? '★ ' : ''}${esc(g.name)}</div>
+      <div class="s">${esc(g.system)}</div>
+    </button>`).join('');
+}
+
+function renderSystems() {
+  if ($('sys').options.length) return;
+  $('sys').innerHTML = data.uploadSystems.map((s) => `<option value="${esc(s.folder)}">${esc(s.label)}</option>`).join('');
+  try { const last = localStorage.getItem('adz-sys'); if (last) $('sys').value = last; } catch { /* ignore */ }
+}
+
+$('chips').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (!b) return; sys = b.dataset.f; renderChips(); renderGrid(); });
+$('q').addEventListener('input', renderGrid);
+$('grid').addEventListener('click', (e) => {
+  const c = e.target.closest('.card'); if (!c) return;
+  current = games().find((g) => g.id === c.dataset.id); if (!current) return;
+  $('sName').textContent = current.name;
+  $('sSys').textContent = current.system;
+  $('sCover').hidden = !current.cover;
+  if (current.cover) $('sCover').src = api('/api/cover?id=' + encodeURIComponent(current.id));
+  $('sheet').hidden = false;
+});
+$('sClose').onclick = () => { $('sheet').hidden = true; };
+$('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) $('sheet').hidden = true; });
+$('sPlay').onclick = async () => {
+  $('sPlay').disabled = true;
+  try {
+    const r = await fetch(api('/api/play?id=' + encodeURIComponent(current.id)), { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Não consegui abrir.');
+    $('sheet').hidden = true;
+    toast(`Abrindo ${current.name} no fliperama!`);
+    setTimeout(load, 2500);
+  } catch (err) { toast(err.message, true); }
+  finally { $('sPlay').disabled = false; }
+};
+
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
+  $('tabGames').hidden = b.dataset.tab !== 'Games';
+  $('tabSend').hidden = b.dataset.tab !== 'Send';
+  $('tabWork').hidden = b.dataset.tab !== 'Work';
+  $('tabQueue').hidden = b.dataset.tab !== 'Queue';
+  if (b.dataset.tab === 'Queue') loadQueue();
+  if (b.dataset.tab === 'Work') loadWork();
+}));
+
+// --- uploads (one after the other, with progress) ---
+$('pick').onclick = () => $('file').click();
+$('sys').onchange = () => { try { localStorage.setItem('adz-sys', $('sys').value); } catch { /* ignore */ } };
+$('file').onchange = async () => {
+  const files = [...$('file').files];
+  $('file').value = '';
+  const folder = $('sys').value;
+  for (const f of files) {
+    const li = document.createElement('li');
+    li.innerHTML = `<div>${esc(f.name)}</div><div class="bar"><i></i></div>`;
+    $('files').prepend(li);
+    try {
+      await new Promise((resolve, reject) => {
+        const x = new XMLHttpRequest();
+        x.open('PUT', api(`/api/upload?system=${encodeURIComponent(folder)}&name=${encodeURIComponent(f.name)}`));
+        x.upload.onprogress = (e) => { if (e.lengthComputable) li.querySelector('i').style.width = `${(e.loaded / e.total) * 100}%`; };
+        x.onload = () => (x.status === 200 ? resolve() : reject(new Error((JSON.parse(x.responseText || '{}').error) || `erro ${x.status}`)));
+        x.onerror = () => reject(new Error('A conexão caiu.'));
+        x.send(f);
+      });
+      li.className = 'ok';
+      li.querySelector('div').textContent = `✓ ${f.name}`;
+    } catch (err) {
+      li.className = 'err';
+      li.querySelector('div').textContent = `✗ ${f.name}: ${err.message}`;
+    }
+  }
+  load();
+};
+
+load();
+setInterval(load, 6000);
+
+// --- TRABALHO: tasks and notes on the cabinet (the arcade's office) ------------------------
+const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const dayName = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
+let work = null;
+async function workPost(what, data, ok) {
+  try {
+    const r = await fetch(api('/api/work'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ what, data }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || 'erro');
+    if (ok) toast(ok);
+  } catch (e) { toast(e.message, true); }
+  loadWork();
+}
+async function loadWork() {
+  try {
+    const r = await fetch(api('/api/work')); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'erro');
+    work = j; renderWork();
+  } catch (e) { $('wList').innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+}
+function taskEl(t, kind) {
+  const sub = kind === 'tasks' && t.day && t.day !== today() ? `<small>${dayName(t.day)}</small>` : '';
+  return `<div class="task ${t.done ? 'done' : ''}" data-id="${esc(t.id)}" data-kind="${kind}">
+    ${kind === 'tasks' ? `<button class="ck" data-op="${t.done ? 'undo' : 'done'}">${t.done ? '✓' : ''}</button>` : ''}
+    <div class="tx">${esc(t.text)}${sub}</div>
+    <button class="ic" data-op="edit" aria-label="Editar">✎</button><button class="ic" data-op="delete" aria-label="Apagar">🗑</button></div>`;
+}
+function renderWork() {
+  const t0 = today();
+  const tasks = work.tasks || [];
+  const groups = [
+    ['ATRASADAS', 'late', tasks.filter((t) => !t.done && t.day < t0)],
+    ['HOJE', '', tasks.filter((t) => !t.done && t.day === t0)],
+    ['PRÓXIMAS', '', tasks.filter((t) => !t.done && t.day > t0).sort((a, b) => a.day.localeCompare(b.day))],
+    ['FEITAS', '', tasks.filter((t) => t.done)]
+  ].filter((g) => g[2].length);
+  $('wList').innerHTML = groups.map(([n, c, l]) => `<div class="grp ${c}">${n} · ${l.length}</div>${l.map((t) => taskEl(t, 'tasks')).join('')}`).join('') || '<p class="empty">Nenhuma tarefa. Adicione acima.</p>';
+  $('nList').innerHTML = (work.notes || []).slice().reverse().map((n) => taskEl(n, 'notes')).join('') || '<p class="empty">Sem anotações</p>';
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('#tabWork [data-op]'); if (!b) return;
+  const el = b.closest('.task'); const id = el.dataset.id; const kind = el.dataset.kind; const op = b.dataset.op;
+  const item = (kind === 'tasks' ? work.tasks : work.notes).find((x) => x.id === id) || {};
+  if (op === 'edit') { const text = prompt('Editar', item.text); if (text && text.trim() && text !== item.text) workPost('item', { kind, id, op: 'edit', text: text.trim() }, 'Salvo'); return; }
+  if (op === 'delete') { if (confirm(`Apagar "${item.text}"?`)) workPost('item', { kind, id, op: 'delete' }, 'Apagado'); return; }
+  workPost('item', { kind, id, op });
+});
+function addTask() { const text = $('wText').value.trim(); if (!text) return; $('wText').value = ''; workPost('add', { kind: 'tasks', text, day: $('wDay').value || today() }, 'Tarefa adicionada'); }
+function addNote() { const text = $('nText').value.trim(); if (!text) return; $('nText').value = ''; workPost('add', { kind: 'notes', text }, 'Anotado'); }
+$('wAdd').onclick = addTask; $('nAdd').onclick = addNote;
+$('wText').addEventListener('keydown', (e) => { if (e.key === 'Enter') addTask(); });
+$('nText').addEventListener('keydown', (e) => { if (e.key === 'Enter') addNote(); });
+$('wDay').value = today();
+
+// --- BAIXAR: the notebook's download queue; the phone only sends the link ------------------
+const Q_WORD = { pending: 'na fila', downloading: 'baixando', preparing: 'preparando', done: 'pronto', failed: 'falhou' };
+async function queuePost(body, ok) {
+  try {
+    const r = await fetch(api('/api/queue'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || 'erro');
+    if (ok) toast(ok); renderQueue(j);
+  } catch (e) { toast(e.message, true); }
+}
+async function loadQueue() {
+  try { const r = await fetch(api('/api/queue')); const j = await r.json(); if (!r.ok) throw new Error(j.error || 'erro'); renderQueue(j); }
+  catch (e) { $('qList').innerHTML = '<p class="empty">' + esc(e.message) + '</p>'; }
+}
+function renderQueue(q) {
+  const jobs = (q.jobs || []).slice().reverse();
+  $('qList').innerHTML = jobs.map((j) => '<div class="task qjob ' + j.status + '" data-id="' + esc(j.id) + '"><div class="tx">' + esc(j.title)
+    + '<small>' + (Q_WORD[j.status] || j.status) + (j.status === 'downloading' ? ' ' + (j.percent || 0) + '%' : '') + (j.error ? ' · ' + esc(j.error) : '') + '</small>'
+    + (j.status === 'downloading' ? '<i class="qbar"><b style="width:' + (j.percent || 0) + '%"></b></i>' : '') + '</div>'
+    + (j.status === 'failed' ? '<button class="ic" data-q="retry">↻</button>' : '')
+    + (j.status !== 'downloading' && j.status !== 'preparing' ? '<button class="ic" data-q="remove">🗑</button>' : '') + '</div>').join('')
+    || '<p class="empty">Nada na fila. Cole um link acima.</p>';
+}
+$('qAdd').addEventListener('click', () => { const url = $('qUrl').value.trim(); if (!url) return; $('qUrl').value = ''; queuePost({ url }, 'Na fila: o notebook vai baixar'); });
+$('qUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('qAdd').click(); });
+$('qList').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (!b) return; queuePost({ action: b.dataset.q, id: b.closest('[data-id]').dataset.id }); });
+setInterval(() => { if (!$('tabQueue').hidden) loadQueue(); }, 3000);
+</script>
+</body>
+</html>

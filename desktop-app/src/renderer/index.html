@@ -15,6 +15,7 @@
       <button class="tl-btn tl-max" id="winMax" title="Maximizar"></button>
     </div>
     <div class="brand"><span class="ico brand-ico" data-icon="gamepad"></span> RetroPie ROM Sender</div>
+    <button id="arcadeBtn" class="arcade-btn" title="Abrir o modo arcade em tela cheia"><span class="ico" data-icon="play"></span> Modo arcade</button>
     <button id="connBtn" class="conn-btn">
       <span id="connDot" class="dot off"></span>
       <span id="connText">Conectar</span>
@@ -23,7 +24,8 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="turbinar"><span class="ico" data-icon="bolt"></span> Turbinar</button>
+    <button class="tab active" data-tab="notebook"><span class="ico" data-icon="laptop"></span> Este notebook</button>
+    <button class="tab" data-tab="turbinar"><span class="ico" data-icon="bolt"></span> Turbinar</button>
     <button class="tab" data-tab="baixar"><span class="ico" data-icon="gamepad"></span> Baixar</button>
     <button class="tab" data-tab="meus"><span class="ico" data-icon="library"></span> Meus jogos</button>
     <button class="tab" data-tab="liberar"><span class="ico" data-icon="unlock"></span> Liberar tudo</button>
@@ -32,7 +34,110 @@
   </nav>
 
   <!-- TURBINAR: the paid add-on -->
-  <section class="panel active" data-panel="turbinar">
+  <!-- ESTE NOTEBOOK: the arcade mode that runs the games here (RetroArch) -->
+  <section class="panel active" data-panel="notebook">
+    <div class="nb">
+      <div class="nb-hero">
+        <div class="nb-hero-text">
+          <h2>Este notebook é o fliperama</h2>
+          <p>Os jogos que você baixa ficam em <code id="nbLib">…</code> e rodam aqui mesmo, no modo arcade, com o visual do Arcade do Zero. O painel USB funciona como no RetroPie: <b>SELECT + START</b> sai do jogo e volta para a lista.</p>
+          <div class="nb-actions">
+            <button class="primary" id="nbArcade"><span class="ico" data-icon="play"></span> Abrir o modo arcade</button>
+            <button data-go="baixar"><span class="ico" data-icon="gamepad"></span> Baixar jogos</button>
+          </div>
+        </div>
+        <div class="nb-stats">
+          <div><b id="nbGames">–</b><span>jogos</span></div>
+          <div><b id="nbSystems">–</b><span>sistemas</span></div>
+          <div><b id="nbPads">–</b><span>controles configurados</span></div>
+        </div>
+      </div>
+
+      <div class="tb-card nb-phone">
+        <img id="nbQr" alt="QR code para o celular">
+        <div>
+          <h3><span class="ico" data-icon="wifi"></span> Celular no fliperama</h3>
+          <p class="hint">Aponte a câmera do celular para o código (mesmo Wi-Fi). No celular dá para ver os jogos, abrir um jogo na tela do fliperama e <b>enviar jogos</b> baixados no celular (RomsPure e outros) direto para cá.</p>
+          <code id="nbPhoneUrl">…</code>
+          <div id="nbPhoneStatus" class="status"></div>
+          <div class="nb-row">
+            <button id="nbFirewall"><span class="ico" data-icon="check"></span> Liberar no firewall do Windows</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tb-card nb-queue">
+        <h3><span class="ico" data-icon="download"></span> Fila de downloads <small id="nbQSum" class="hint"></small></h3>
+        <p class="hint">Cole um ou vários links de páginas de jogos (Retrostic), um por linha. O notebook baixa sozinho, um depois do outro, e coloca cada jogo no fliperama com capa. Se o app fechar, ele continua de onde parou. Pelo celular também dá: aba <b>Baixar</b>.</p>
+        <textarea id="nbQUrls" rows="2" placeholder="https://www.retrostic.com/roms/…"></textarea>
+        <div class="nb-row">
+          <button class="primary" id="nbQAdd"><span class="ico" data-icon="download"></span> Colocar na fila</button>
+          <button id="nbQPause"><span class="ico" data-icon="reload"></span> Pausar</button>
+          <button id="nbQClear">Limpar os prontos</button>
+        </div>
+        <ul class="nb-queue-list" id="nbQList"></ul>
+      </div>
+
+      <div class="tb-card nb-sync">
+        <h3><span class="ico" data-icon="board"></span> Trazer os jogos do fliperama</h3>
+        <p class="hint">Copia para este notebook os jogos da Raspberry, com os nomes e as capas da lista dela, as BIOS e <b>os mesmos emuladores</b> que ela usa em cada sistema. Os romsets de arcade só funcionam no emulador para o qual foram feitos. O que já está aqui não é copiado de novo.</p>
+        <div id="nbSyncStatus" class="status"></div>
+        <ul class="nb-systems" id="nbSyncList" hidden></ul>
+        <div class="nb-row">
+          <button id="nbSyncCheck"><span class="ico" data-icon="reload"></span> Ver o que tem no fliperama</button>
+          <button class="primary" id="nbSyncGo" disabled><span class="ico" data-icon="download"></span> Copiar para este notebook</button>
+        </div>
+      </div>
+
+      <div class="nb-cards">
+        <div class="tb-card">
+          <h3><span class="tb-n">1</span> Emulador (RetroArch)</h3>
+          <p class="hint">É ele que roda os jogos. O app baixa a versão oficial e cuida da configuração (tela cheia e os atalhos do RetroPie).</p>
+          <div id="nbRaStatus" class="status"></div>
+          <div class="nb-row">
+            <button class="primary" id="nbRaInstall"><span class="ico" data-icon="download"></span> Instalar o RetroArch</button>
+            <button id="nbRaPick"><span class="ico" data-icon="folder"></span> Já tenho, escolher…</button>
+          </div>
+        </div>
+
+        <div class="tb-card">
+          <h3><span class="tb-n">2</span> Sistemas e emuladores</h3>
+          <p class="hint">Cada sistema precisa do seu emulador (core). O modo arcade também baixa sozinho na primeira vez que você abre um jogo.</p>
+          <ul class="nb-systems" id="nbSystemsList"></ul>
+          <div class="nb-row">
+            <button id="nbCores"><span class="ico" data-icon="download"></span> Instalar os que faltam</button>
+            <button id="nbCovers"><span class="ico" data-icon="download"></span> Baixar capas que faltam</button>
+            <button id="nbRefresh"><span class="ico" data-icon="reload"></span> Atualizar</button>
+          </div>
+        </div>
+
+        <div class="tb-card">
+          <h3><span class="tb-n">3</span> Ao abrir</h3>
+          <label class="nb-opt"><input type="radio" name="nbStart" value="arcade"> <span><b>Abrir direto no modo arcade</b><small>Como o fliperama: liga e já está na lista de jogos.</small></span></label>
+          <label class="nb-opt"><input type="radio" name="nbStart" value="manager"> <span><b>Abrir neste painel</b><small>Para quem está montando e baixando jogos.</small></span></label>
+          <label class="nb-opt"><input type="checkbox" id="nbLogin"> <span><b>Abrir o arcade quando o Windows ligar</b><small>Liga o notebook e o fliperama já aparece.</small></span></label>
+        </div>
+
+        <div class="tb-card">
+          <h3><span class="tb-n">4</span> Painel e controles USB</h3>
+          <p class="hint">Ligue o painel arcade (encoder USB) ou o controle. No modo arcade, aperte <b>START</b> → <b>Configurar controle</b> e siga a tela, igual ao "Configure Input" do RetroPie. Painéis no modo teclado (I-PAC) já funcionam sem configurar.</p>
+          <table class="nb-keys">
+            <tr><td>Direcional</td><td>Navegar</td></tr>
+            <tr><td>Botão 1 / A</td><td>Jogar</td></tr>
+            <tr><td>Botão 2 / B</td><td>Voltar</td></tr>
+            <tr><td>Botão 4 / Y</td><td>Favorito</td></tr>
+            <tr><td>START</td><td>Menu do arcade</td></tr>
+            <tr><td>SELECT + START</td><td>Sair do jogo</td></tr>
+            <tr><td>SELECT + Botão 3</td><td>Menu do RetroArch</td></tr>
+            <tr><td>SELECT + Botão 6 / 5</td><td>Salvar / carregar estado</td></tr>
+          </table>
+        </div>
+      </div>
+      <ol id="nbLog" class="tb-log"></ol>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="turbinar">
     <div class="tb">
       <div class="tb-hero">
         <div class="tb-screen" id="tbScreen">
@@ -107,7 +212,12 @@
       <button id="impPick" title="Enviar um arquivo que você já tem no PC">
         <span class="ico" data-icon="folder"></span> Importar do PC
       </button>
-      <label class="autochk" title="Ao baixar, já envia pro fliperama e busca a capa sozinho">
+      <select id="target" class="target-sel" title="Para onde vão os jogos baixados">
+        <option value="notebook">Para este notebook</option>
+        <option value="pi">Para a Raspberry</option>
+        <option value="both">Para os dois</option>
+      </select>
+      <label class="autochk" title="Ao baixar, já manda pro fliperama e busca a capa sozinho">
         <input id="autoSend" type="checkbox" />
         <span class="ico" data-icon="bolt"></span> Automático
       </label>
@@ -140,7 +250,8 @@
       <div class="sb-actions">
         <span id="sbStatus" class="status"></span>
         <button id="sbCancel">Descartar</button>
-        <button id="sbSend" class="primary"><span class="ico" data-icon="check"></span> Enviar pro fliperama</button>
+        <button id="sbPlay" class="primary hidden"><span class="ico" data-icon="play"></span> Jogar agora</button>
+        <button id="sbSend" class="primary"><span class="ico" data-icon="check"></span> Mandar pro fliperama</button>
       </div>
     </div>
   </section>
@@ -533,5 +644,6 @@
   <script src="renderer.js"></script>
   <script src="unlocks.js"></script>
   <script src="turbinar.js"></script>
+  <script src="notebook.js"></script>
 </body>
 </html>
